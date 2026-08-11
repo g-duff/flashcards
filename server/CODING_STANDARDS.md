@@ -232,5 +232,12 @@ While strict functional purity is impossible in a systems language, we strive to
 
 ---
 
+
+## Testing
+
+Functional core: all code in the functional core must be unit-tested, with unit tests in the same file as the production code. The unit tests must prioritise the use-cases described in user-stories.
+
+---
+
 > **Summary Guideline:** Write code that compiles cleanly, expresses domain logic through types rather than documentation, and transforms data through predictable, immutable pipelines.
 
