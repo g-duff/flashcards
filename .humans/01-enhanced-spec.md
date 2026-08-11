@@ -83,7 +83,7 @@ The app will show one word, and multiple possible answers, one of which is corre
 
 **Choose Practice Category**
 * Lists all categories (sorted by creation date or alphabetically)
-* Shows proficiency indicator per category for current user (e.g., % correct, difficulty level, last practiced date)
+* Shows proficiency indicator per category for current user (e.g., % correct, last practiced date)
 * Click category → navigates to Practice screen
 * Redirects to Home if user is not set in cookie
 
@@ -93,7 +93,7 @@ The app will show one word, and multiple possible answers, one of which is corre
 * Displays current question with 4-5 multiple choice options (see section 2, Highest priority)
 * User selects answer
 * Shows immediate feedback (correct/incorrect)
-* Auto-advances to next question after 2 seconds (or user taps next)
+* Advances to next question when user taps next
 * Shows summary screen after all questions in session
 * Redirects to Home if user is not set in cookie
 
@@ -310,6 +310,7 @@ base_priority: 0                  # Default priority for new vocab
 | POST | `/api/categories` | Create category | `{ "name": "Fruits" }` | `{ "status": "success", "data": { Category } }` |
 | GET | `/api/categories` | List all categories | — | `{ "status": "success", "data": [ Category ] }` |
 | GET | `/api/categories/:id` | Get category by ID | — | `{ "status": "success", "data": { Category } }` |
+| DELETE | `/api/categories/:id` | Delete category by ID | — | — |
 
 ### Vocabulary
 
