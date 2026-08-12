@@ -2,7 +2,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080
 
 export interface SuccessEnvelope<T> {
   status: 'success'
-  data?: T
+  data: T | null
   meta: { timestamp: string }
 }
 
@@ -11,7 +11,7 @@ export interface ErrorEnvelope {
   error: {
     code: string
     message: string
-    details?: { field: string; reason: string }[]
+    details: { field: string; reason: string }[]
   }
   meta: { timestamp: string }
 }

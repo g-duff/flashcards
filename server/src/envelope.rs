@@ -14,7 +14,6 @@ pub struct Meta {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct SuccessEnvelope<T> {
     pub status: SuccessStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,
     pub meta: Meta,
 }
@@ -35,7 +34,6 @@ pub struct ErrorDetail {
 pub struct ErrorBody {
     pub code: String,
     pub message: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub details: Vec<ErrorDetail>,
 }
 
@@ -62,7 +60,7 @@ pub fn success<T>(data: T, now: DateTime<Utc>) -> SuccessEnvelope<T> {
 }
 
 /// Builds a success envelope with no `data` payload, e.g. for a successful
-/// deletion, timestamped `now`.
+/// deletion, timestamped `now`. Serializes as `data: null`.
 pub fn success_without_data(now: DateTime<Utc>) -> SuccessEnvelope<()> {
     SuccessEnvelope {
         status: SuccessStatus::Success,
@@ -72,7 +70,7 @@ pub fn success_without_data(now: DateTime<Utc>) -> SuccessEnvelope<()> {
 }
 
 /// Builds an error envelope, timestamped `now`. `details` may be empty, in
-/// which case it is omitted from the serialized output.
+/// which case it serializes as `details: []`.
 pub fn error(
     code: impl Into<String>,
     message: impl Into<String>,
@@ -131,24 +129,27 @@ mod tests {
         assert_eq!(value["meta"]["timestamp"], "2026-08-11T17:56:16Z");
     }
 
-    // Successful deletion returns the success envelope without a `data:
-    // null` field (grilled-spec.md sec. 5).
+    // Successful deletion returns the success envelope with a `data: null`
+    // field (grilled-spec.md sec. 5).
     #[test]
-    fn success_without_data_omits_data_field() {
+    fn success_without_data_includes_null_data_field() {
         let envelope = success_without_data(fixed_now());
         let value = serde_json::to_value(&envelope).unwrap();
 
-        assert_eq!(value.get("data"), None);
+        assert_eq!(value.get("data"), Some(&serde_json::Value::Null));
     }
 
-    // Optional empty fields are omitted rather than sent as null
-    // (spec.md story 72).
+    // Optional empty fields are always present and serialized as null/[]
+    // rather than omitted (spec.md story 72).
     #[test]
-    fn error_envelope_omits_empty_details() {
+    fn error_envelope_includes_empty_details_array() {
         let envelope = error("VALIDATION_ERROR", "Invalid input", vec![], fixed_now());
         let value = serde_json::to_value(&envelope).unwrap();
 
-        assert_eq!(value.get("error").unwrap().get("details"), None);
+        assert_eq!(
+            value["error"]["details"],
+            serde_json::Value::Array(vec![])
+        );
     }
 
     #[test]

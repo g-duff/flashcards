@@ -224,7 +224,7 @@ Error responses use:
 }
 ```
 
-Optional empty fields are omitted. Successful deletion returns the success envelope without a `data: null` field.
+All envelope fields, including optional empty fields, are always included. Successful deletion returns the success envelope with a `data: null` field.
 
 ### Learners
 
@@ -510,7 +510,7 @@ Deleting a Learner removes that Learner's settings, progress, sessions, question
 
 ## 8. Testing Decisions
 
-The primary seam is black-box HTTP integration testing against axum with an isolated SQLite database. Tests should assert external behavior: HTTP status, cookies, redirects, response envelopes, omitted fields, persisted outcomes visible through subsequent API calls, and transactional atomicity.
+The primary seam is black-box HTTP integration testing against axum with an isolated SQLite database. Tests should assert external behavior: HTTP status, cookies, redirects, response envelopes, null optional fields, persisted outcomes visible through subsequent API calls, and transactional atomicity.
 
 Cover:
 
@@ -543,7 +543,7 @@ Focused deterministic priority tests may supplement the HTTP suite for exact ela
 - Completion before every question is answered: reject; completion is automatic after the final submission.
 - Invalid current-learner cookie: clear and redirect to Home.
 - YAML default changes affect new Learners only until an existing Learner resets settings.
-- Empty optional response properties are omitted rather than sent as `null`.
+- Empty optional response properties are included and sent as `null` rather than omitted.
 
 ## 10. Deployment Notes
 
