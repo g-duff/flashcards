@@ -1,0 +1,24 @@
+database_url: "sqlite://storage/flashcards.db"
+migrations_path: "migrations"
+host: "0.0.0.0"
+port: 8080
+session_inactivity_timeout_minutes: 30
+cookie_lifetime_days: 365
+question_count_min: 10
+question_count_max: 20
+supported_languages:
+  - en
+  - es
+  - fr
+  - de
+  - it
+  - pt
+algorithm_defaults:
+  correct_streak_threshold: 5
+  incorrect_boost_threshold: 2
+  deprioritize_duration_days: 3
+  prioritize_duration_days: 2
+  min_interval_before_retest_days: 1
+  incorrect_weight: 3.0
+  time_decay_factor: 0.5
+  base_priority: 0.0
