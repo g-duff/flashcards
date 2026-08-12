@@ -10,13 +10,10 @@ function App() {
   useEffect(() => {
     let cancelled = false
 
-    getHealth()
-      .then((data) => {
-        if (!cancelled) setServer({ kind: 'online', status: data.status })
-      })
-      .catch(() => {
-        if (!cancelled) setServer({ kind: 'offline' })
-      })
+    getHealth().then((result) => {
+      if (cancelled) return
+      setServer(result.ok ? { kind: 'online', status: result.value.status } : { kind: 'offline' })
+    })
 
     return () => {
       cancelled = true

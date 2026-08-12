@@ -1,3 +1,5 @@
+import type { Optional, Result } from '../types/effects'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
 export interface SuccessEnvelope<T> {
@@ -17,23 +19,29 @@ export interface ErrorEnvelope {
 }
 
 export class ApiError extends Error {
-  envelope: ErrorEnvelope
+  envelope: Optional<ErrorEnvelope>
 
-  constructor(envelope: ErrorEnvelope) {
-    super(envelope.error.message)
+  constructor(message: string, envelope?: ErrorEnvelope) {
+    super(message)
     this.envelope = envelope
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: 'include',
-  })
-  const body = (await response.json()) as SuccessEnvelope<T> | ErrorEnvelope
+export async function apiGet<T>(path: string): Promise<Result<T, ApiError>> {
+  let response: Response
+  let body: SuccessEnvelope<T> | ErrorEnvelope
 
-  if (body.status === 'error') {
-    throw new ApiError(body)
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { credentials: 'include' })
+    body = (await response.json()) as SuccessEnvelope<T> | ErrorEnvelope
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'Network request failed'
+    return { ok: false, error: new ApiError(message) }
   }
 
-  return body.data as T
+  if (body.status === 'error') {
+    return { ok: false, error: new ApiError(body.error.message, body) }
+  }
+
+  return { ok: true, value: (body.data ?? undefined) as T }
 }
