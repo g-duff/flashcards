@@ -14,7 +14,7 @@ This document supersedes the decisions in `01-enhanced-spec.md` where they confl
 - Category proficiency and aggregate statistics
 - Client-side CSV parsing with atomic bulk import
 - SQLite persistence
-- Docker Compose for separate client and server services
+- Podman for separate client and server services
 
 ### Deferred
 
@@ -547,4 +547,4 @@ Focused deterministic priority tests may supplement the HTTP suite for exact ela
 
 ## 10. Deployment Notes
 
-Provide separate client and server Docker Compose services. Mount a persistent volume for the SQLite database. Configure the server with YAML values for the database URL, migration path, supported language list, session bounds, timeout, cookie expiry, and initial algorithm defaults. Number and version migrations.
+Provide separate client and server Podman services. Mount a persistent volume for the SQLite database. Configure the server with YAML values for the database URL, migration path, supported language list, session bounds, timeout, cookie expiry, and initial algorithm defaults. Number and version migrations.

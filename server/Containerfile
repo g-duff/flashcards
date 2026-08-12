@@ -11,7 +11,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app/target/release/server ./server
 COPY migrations ./migrations
-COPY config.docker.yaml ./config.yaml
+COPY config.container.yaml ./config.yaml
 
 ENV CONFIG_PATH=/app/config.yaml
 EXPOSE 8080

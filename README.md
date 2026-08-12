@@ -6,14 +6,15 @@ for the full specification.
 
 ## Running the stack
 
-```sh
-docker-compose up --build
-```
+This project runs on plain [Podman](https://podman.io/) — no Docker
+daemon required. See [`docs/running-the-stack.md`](docs/running-the-stack.md)
+for the verified commands (works with or without a compose tool
+installed).
 
 - Client: http://localhost:3000
 - Server: http://localhost:8080
-- SQLite data persists in the `sqlite_data` named volume across
-  `docker-compose down` / `up`.
+- SQLite data persists in the `flashcards_sqlite_data` named volume
+  across container restarts.
 
 ## Client (`client/`)
 
@@ -32,7 +33,7 @@ npm test                  # vitest
 ## Server (`server/`)
 
 Rust/axum, backed by SQLite (raw SQL via `sqlx`), configured via
-`config.yaml` (see `config.docker.yaml` for the containerized variant).
+`config.yaml` (see `config.container.yaml` for the containerized variant).
 
 ```sh
 cargo build            # compile
