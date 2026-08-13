@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Rust/axum server boots, reading a YAML config file with (at least) database URL, migration path, session inactivity timeout, cookie lifetime, question-count bounds, supported-language list, and application-level algorithm defaults.
 - [ ] SQLite is wired up via a configurable database URL; numbered/versioned migrations run on startup from a configurable migration path.
