@@ -1,0 +1,18 @@
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+  text-align: center;
+}
+
+.server-status {
+  color: var(--text);
+}
+
+.server-status[data-status='online'] {
+  color: #1a7f37;
+}
+
+.server-status[data-status='offline'] {
+  color: #cf222e;
+}

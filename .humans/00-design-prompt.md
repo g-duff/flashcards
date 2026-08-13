@@ -1,6 +1,5 @@
 # Human prompt and design notes
 
-
 ## 1. Tech Spec and repo structure
 I want a design for a flashcards app for language learning, inspired by DuoLingo.
 
@@ -69,4 +68,4 @@ The UI should have these screens:
 
 ## Development strategy
 * Enable early manual user testing by prioritising completion end-to-end features, feature-by-feature if possible.
-* Define a dockerfile per service, and a docker-compose file at the repo root so that a developer can run the app for manual testing with `docker compose`
+* Define a Containerfile per service, and a compose file at the repo root so that a developer can run the app for manual testing with Podman

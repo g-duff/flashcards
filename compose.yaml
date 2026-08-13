@@ -1,0 +1,23 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Containerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - sqlite_data:/data
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Containerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:

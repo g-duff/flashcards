@@ -89,11 +89,11 @@ Spaced repetition selects Eligible Entries using each Learner’s persisted Lear
 69. As a Learner, I want aggregate statistics visible across Learners, so that the shared app can show overall activity.
 70. As a Learner, I want detailed Direction-specific Progress limited to the selected Learner, so that shared visibility does not expose another person’s learning history unnecessarily.
 71. As a Learner, I want consistent JSON success and error envelopes, so that the client can handle all endpoints uniformly.
-72. As a Learner, I want empty response fields omitted rather than serialized as `null`, so that responses remain concise and semantically clear.
+72. As a Learner, I want empty response fields always present and serialized as `null` rather than omitted, so that response shapes are predictable and uniform.
 73. As a Learner, I want validation errors to identify invalid fields, so that I can correct content quickly.
 74. As a Learner, I want duplicate and constraint conflicts reported distinctly, so that I know whether to edit or retry.
 75. As a developer, I want database and migration paths configurable, so that local and containerized deployments can use different storage locations.
-76. As a developer, I want the client and server runnable as separate Docker Compose services, so that each boundary can evolve independently.
+76. As a developer, I want the client and server runnable as separate Podman services, so that each boundary can evolve independently.
 77. As a developer, I want SQLite persisted through a shared container volume, so that local practice data survives restarts.
 78. As a developer, I want application defaults such as language list, session limits, timeout, cookie lifetime, and algorithm defaults in YAML configuration, so that deployment behavior is adjustable without code changes.
 79. As a developer, I want raw SQL and explicit transactions for core persistence operations, so that data consistency is visible and predictable.
@@ -135,16 +135,16 @@ Spaced repetition selects Eligible Entries using each Learner’s persisted Lear
 - Calculate time-based behavior with exact elapsed UTC durations rather than local calendar dates.
 - Expose detailed progress only for the selected Learner. Expose aggregate statistics across Learners using only retained Vocabulary Entries and completed sessions.
 - Provide a dedicated Learner settings surface/API for algorithm tuning and reset-to-default behavior.
-- Use a stable JSON envelope for all success and error responses. Successful deletion uses an envelope without an empty `null` field; optional empty fields are omitted. Errors contain machine-readable codes, user-facing messages, and field-level details where relevant.
+- Use a stable JSON envelope for all success and error responses. Successful deletion uses an envelope with a `data: null` field; optional empty fields are always included and serialized as `null`. Errors contain machine-readable codes, user-facing messages, and field-level details where relevant.
 - Use standard HTTP statuses for success, validation, missing resources, conflicts, and server failures.
 - Provide user, Category, Vocabulary Entry, Practice Session, progress, statistics, and Learner settings API operations. Learner-scoped operations derive identity from the cookie rather than trusting redundant request-body user IDs.
-- Run separate client and server Docker Compose services and persist SQLite through a shared volume.
+- Run separate client and server Podman services and persist SQLite through a shared volume.
 
 ## Testing Decisions
 
 - Test external behavior at the highest confirmed seam: black-box HTTP integration tests against the axum API using an isolated SQLite database.
 - Exercise the complete flows through HTTP: profile selection, shared content creation and editing, atomic bulk import, Category and Vocabulary Deletion, session generation, answer submission, automatic completion, restart/timeout discard, progress, statistics, and settings.
-- Assert response status, JSON envelope shape, omitted empty fields, validation details, conflict behavior, cookie behavior, and redirect behavior.
+- Assert response status, JSON envelope shape, null optional fields, validation details, conflict behavior, cookie behavior, and redirect behavior.
 - Verify database-visible outcomes through subsequent API behavior rather than coupling tests to internal module structure.
 - Cover domain edge cases through API scenarios: duplicate normalized names, duplicate Vocabulary Entries, missing Category Memberships, unsafe Category deletion, insufficient distractors, category-first fallback, hard cooldown exclusion, incorrect-answer boosts, streak penalties, direction isolation, idempotent submissions, duplicate completion, invalid cookies, and deleted content.
 - Verify transactional behavior by forcing invalid answer/content operations and confirming that no partial progress, session counters, or shared-content changes are observable afterward.

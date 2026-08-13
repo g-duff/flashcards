@@ -527,7 +527,7 @@ base_priority: 0                  # Default priority for new vocab
 
 ## 10. Development Strategy
 * Enable early manual user testing by prioritizing completion end-to-end features, feature-by-feature if possible.
-* Define a dockerfile per service, and a docker-compose file at the repo root so that a developer can run the app for manual testing with `docker compose up`
+* Define a Containerfile per service, and a compose file at the repo root so that a developer can run the app for manual testing with Podman
 * **Milestone 1:** User + Category + Vocab Add (MVP data layer)
 * **Milestone 2:** Multiple Choice Practice with basic progress tracking
 * **Milestone 3:** Spaced repetition algorithm implementation
