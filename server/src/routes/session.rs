@@ -6,8 +6,8 @@
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
-use axum_extra::extract::CookieJar;
+use axum::http::header::{COOKIE, SET_COOKIE};
+use axum::http::{HeaderMap, StatusCode};
 use chrono::Utc;
 use serde::Deserialize;
 
@@ -23,13 +23,21 @@ pub struct SelectLearnerRequest {
     pub learner_id: LearnerId,
 }
 
+/// Reads the raw `learner_id` cookie value out of the incoming request, if
+/// that cookie is present at all. `Some(None)` means it was present but
+/// held a non-numeric value; `None` means no `learner_id` cookie was sent.
+fn learner_cookie_from_request(headers: &HeaderMap) -> Option<Option<LearnerId>> {
+    let cookie_header = headers.get(COOKIE)?.to_str().ok()?;
+    let raw_value = identity::learner_cookie_value(cookie_header)?;
+    Some(raw_value.parse::<i64>().ok().map(LearnerId))
+}
+
 /// Selects an existing Learner and sets the current-learner cookie
 /// (spec.md story 2).
 pub async fn select_learner(
     State(state): State<AppState>,
-    jar: CookieJar,
     Json(payload): Json<SelectLearnerRequest>,
-) -> Result<(CookieJar, SuccessEnvelope<Learner>), ErrorResponse> {
+) -> Result<(HeaderMap, SuccessEnvelope<Learner>), ErrorResponse> {
     let learner = repository::find_by_id(state.db(), payload.learner_id)
         .await
         .map_err(internal_error)?
@@ -46,17 +54,22 @@ pub async fn select_learner(
             ),
         })?;
 
-    let cookie = identity::learner_cookie(learner.id, state.config().cookie_lifetime_days);
-    let jar = jar.add(cookie);
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        SET_COOKIE,
+        identity::learner_cookie_header(learner.id, state.config().cookie_lifetime_days),
+    );
 
-    Ok((jar, envelope::success(learner, Utc::now())))
+    Ok((headers, envelope::success(learner, Utc::now())))
 }
 
 /// Clears the current-learner cookie (spec.md story: sign-out / switch
 /// profile).
-pub async fn clear_learner_session(jar: CookieJar) -> (CookieJar, SuccessEnvelope<()>) {
-    let jar = jar.remove(identity::learner_cookie_key());
-    (jar, envelope::success_without_data(Utc::now()))
+pub async fn clear_learner_session() -> (HeaderMap, SuccessEnvelope<()>) {
+    let mut headers = HeaderMap::new();
+    headers.insert(SET_COOKIE, identity::clear_learner_cookie_header());
+
+    (headers, envelope::success_without_data(Utc::now()))
 }
 
 /// Resolves the current Learner from the cookie, if any. An invalid or
@@ -64,26 +77,21 @@ pub async fn clear_learner_session(jar: CookieJar) -> (CookieJar, SuccessEnvelop
 /// response uniformly and redirect to Home (spec.md story 4).
 pub async fn get_current_learner(
     State(state): State<AppState>,
-    jar: CookieJar,
-) -> Result<(CookieJar, SuccessEnvelope<Option<Learner>>), ErrorResponse> {
-    let cookie_value = jar
-        .get(identity::LEARNER_COOKIE_NAME)
-        .map(|cookie| cookie.value().to_string());
+    request_headers: HeaderMap,
+) -> Result<(HeaderMap, SuccessEnvelope<Option<Learner>>), ErrorResponse> {
+    let learner_cookie = learner_cookie_from_request(&request_headers);
 
-    let learner_id = cookie_value.as_deref().and_then(identity::parse_learner_id);
-
-    let learner = match learner_id {
+    let learner = match learner_cookie.flatten() {
         Some(id) => repository::find_by_id(state.db(), id)
             .await
             .map_err(internal_error)?,
         None => None,
     };
 
-    let jar = if cookie_value.is_some() && learner.is_none() {
-        jar.remove(identity::learner_cookie_key())
-    } else {
-        jar
-    };
+    let mut response_headers = HeaderMap::new();
+    if learner_cookie.is_some() && learner.is_none() {
+        response_headers.insert(SET_COOKIE, identity::clear_learner_cookie_header());
+    }
 
-    Ok((jar, envelope::success(learner, Utc::now())))
+    Ok((response_headers, envelope::success(learner, Utc::now())))
 }

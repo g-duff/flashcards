@@ -3,8 +3,8 @@
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
-use axum_extra::extract::CookieJar;
+use axum::http::header::SET_COOKIE;
+use axum::http::{HeaderName, HeaderValue, StatusCode};
 use chrono::Utc;
 use serde::Deserialize;
 
@@ -24,9 +24,15 @@ pub struct CreateLearnerRequest {
 /// cookie so the new profile becomes current immediately (spec.md story 1).
 pub async fn create_learner(
     State(state): State<AppState>,
-    jar: CookieJar,
     Json(payload): Json<CreateLearnerRequest>,
-) -> Result<(StatusCode, CookieJar, SuccessEnvelope<Learner>), ErrorResponse> {
+) -> Result<
+    (
+        StatusCode,
+        [(HeaderName, HeaderValue); 1],
+        SuccessEnvelope<Learner>,
+    ),
+    ErrorResponse,
+> {
     let name = learners::validate_name(&payload.name).map_err(|_| ErrorResponse {
         status_code: StatusCode::BAD_REQUEST,
         envelope: envelope::error(
@@ -58,12 +64,11 @@ pub async fn create_learner(
             other => internal_error(other),
         })?;
 
-    let cookie = identity::learner_cookie(learner.id, state.config().cookie_lifetime_days);
-    let jar = jar.add(cookie);
+    let cookie = identity::learner_cookie_header(learner.id, state.config().cookie_lifetime_days);
 
     Ok((
         StatusCode::CREATED,
-        jar,
+        [(SET_COOKIE, cookie)],
         envelope::success(learner, Utc::now()),
     ))
 }
