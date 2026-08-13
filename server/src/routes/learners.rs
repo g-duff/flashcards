@@ -1,0 +1,79 @@
+//! `POST /api/learners`, `GET /api/learners`: Learner creation and listing
+//! for profile selection (grilled-spec.md sec. 5).
+
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum_extra::extract::CookieJar;
+use chrono::Utc;
+use serde::Deserialize;
+
+use crate::envelope::{self, ErrorDetail, ErrorResponse, SuccessEnvelope};
+use crate::identity;
+use crate::learners::repository::{self, RepositoryError};
+use crate::learners::{self, Learner};
+use crate::routes::internal_error;
+use crate::state::AppState;
+
+#[derive(Debug, Deserialize)]
+pub struct CreateLearnerRequest {
+    pub name: String,
+}
+
+/// Creates a Learner with a unique display name and sets the current-learner
+/// cookie so the new profile becomes current immediately (spec.md story 1).
+pub async fn create_learner(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Json(payload): Json<CreateLearnerRequest>,
+) -> Result<(StatusCode, CookieJar, SuccessEnvelope<Learner>), ErrorResponse> {
+    let name = learners::validate_name(&payload.name).map_err(|_| ErrorResponse {
+        status_code: StatusCode::BAD_REQUEST,
+        envelope: envelope::error(
+            "VALIDATION_ERROR",
+            "Learner name cannot be empty.",
+            vec![ErrorDetail {
+                field: "name".to_string(),
+                reason: "Cannot be empty".to_string(),
+            }],
+            Utc::now(),
+        ),
+    })?;
+
+    let learner = repository::insert(state.db(), &name, Utc::now())
+        .await
+        .map_err(|error| match error {
+            RepositoryError::DuplicateName => ErrorResponse {
+                status_code: StatusCode::CONFLICT,
+                envelope: envelope::error(
+                    "LEARNER_NAME_CONFLICT",
+                    "A learner with this name already exists.",
+                    vec![ErrorDetail {
+                        field: "name".to_string(),
+                        reason: "Already in use".to_string(),
+                    }],
+                    Utc::now(),
+                ),
+            },
+            other => internal_error(other),
+        })?;
+
+    let cookie = identity::learner_cookie(learner.id, state.config().cookie_lifetime_days);
+    let jar = jar.add(cookie);
+
+    Ok((
+        StatusCode::CREATED,
+        jar,
+        envelope::success(learner, Utc::now()),
+    ))
+}
+
+/// Lists every Learner for profile selection on the Home screen
+/// (spec.md story 2).
+pub async fn list_learners(
+    State(state): State<AppState>,
+) -> Result<SuccessEnvelope<Vec<Learner>>, ErrorResponse> {
+    let learners = repository::list(state.db()).await.map_err(internal_error)?;
+
+    Ok(envelope::success(learners, Utc::now()))
+}

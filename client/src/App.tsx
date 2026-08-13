@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getHealth } from './api/health'
+import Home from './Home'
 import './App.css'
 
 type ServerStatus = { kind: 'loading' } | { kind: 'online'; status: string } | { kind: 'offline' }
@@ -28,6 +29,7 @@ function App() {
         {server.kind === 'online' && `Server is ${server.status}`}
         {server.kind === 'offline' && 'Server is unreachable'}
       </p>
+      <Home />
     </main>
   )
 }

@@ -146,10 +146,7 @@ mod tests {
         let envelope = error("VALIDATION_ERROR", "Invalid input", vec![], fixed_now());
         let value = serde_json::to_value(&envelope).unwrap();
 
-        assert_eq!(
-            value["error"]["details"],
-            serde_json::Value::Array(vec![])
-        );
+        assert_eq!(value["error"]["details"], serde_json::Value::Array(vec![]));
     }
 
     #[test]
