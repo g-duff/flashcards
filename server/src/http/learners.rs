@@ -8,11 +8,11 @@ use axum::http::{HeaderName, HeaderValue, StatusCode};
 use chrono::Utc;
 use serde::Deserialize;
 
-use crate::envelope::{self, ErrorDetail, ErrorResponse, SuccessEnvelope};
-use crate::identity;
+use crate::http::envelope::{self, ErrorDetail, ErrorResponse, SuccessEnvelope};
+use crate::http::cookies;
 use crate::learners::repository::{self, RepositoryError};
 use crate::learners::{self, Learner};
-use crate::routes::internal_error;
+use crate::http::internal_error;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -64,7 +64,7 @@ pub async fn create_learner(
             other => internal_error(other),
         })?;
 
-    let cookie = identity::learner_cookie_header(learner.id, state.config().cookie_lifetime_days);
+    let cookie = cookies::learner_cookie_header(learner.id, state.config().cookie_lifetime_days);
 
     Ok((
         StatusCode::CREATED,

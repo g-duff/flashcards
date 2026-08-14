@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::envelope::{self, ErrorResponse, SuccessEnvelope};
+use crate::http::envelope::{self, ErrorResponse, SuccessEnvelope};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]

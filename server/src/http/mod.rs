@@ -1,5 +1,10 @@
-//! HTTP route wiring.
+//! HTTP layer: route wiring plus the pure helpers (cookie headers, response
+//! envelope) that shape requests and responses. The imperative shell's HTTP
+//! boundary, as distinct from domain logic (`learners`, `config`) and
+//! infrastructure (`db`, `state`).
 
+pub mod cookies;
+pub mod envelope;
 pub mod health;
 pub mod learners;
 pub mod session;
@@ -9,7 +14,7 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use chrono::Utc;
 
-use crate::envelope::{self, ErrorResponse};
+use self::envelope::ErrorResponse;
 use crate::learners::repository::RepositoryError;
 use crate::state::AppState;
 

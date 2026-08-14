@@ -58,10 +58,17 @@ pub fn learner_cookie_value(cookie_header: &str) -> Option<&str> {
 /// value. A missing cookie, or one holding a non-numeric value, is treated
 /// as absent, the same as a deleted profile.
 pub fn parse_learner_cookie(cookie_header: &str) -> Option<LearnerId> {
-    learner_cookie_value(cookie_header)?
-        .parse::<i64>()
-        .ok()
-        .map(LearnerId)
+    parse_learner_cookie_presence(cookie_header).flatten()
+}
+
+/// Parses the current-learner ID out of a raw `Cookie` request header value,
+/// distinguishing "no `learner_id` cookie was sent" (`None`) from "one was
+/// sent but held a non-numeric value" (`Some(None)`). Callers that need to
+/// react differently to a malformed cookie (e.g. clearing it) should use
+/// this instead of [`parse_learner_cookie`], which collapses both cases.
+pub fn parse_learner_cookie_presence(cookie_header: &str) -> Option<Option<LearnerId>> {
+    let raw_value = learner_cookie_value(cookie_header)?;
+    Some(raw_value.parse::<i64>().ok().map(LearnerId))
 }
 
 #[cfg(test)]

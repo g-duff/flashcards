@@ -11,11 +11,11 @@ use axum::http::{HeaderMap, StatusCode};
 use chrono::Utc;
 use serde::Deserialize;
 
-use crate::envelope::{self, ErrorDetail, ErrorResponse, SuccessEnvelope};
-use crate::identity;
+use crate::http::cookies;
+use crate::http::envelope::{self, ErrorDetail, ErrorResponse, SuccessEnvelope};
+use crate::http::internal_error;
 use crate::learners::repository;
 use crate::learners::{Learner, LearnerId};
-use crate::routes::internal_error;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -28,8 +28,7 @@ pub struct SelectLearnerRequest {
 /// held a non-numeric value; `None` means no `learner_id` cookie was sent.
 fn learner_cookie_from_request(headers: &HeaderMap) -> Option<Option<LearnerId>> {
     let cookie_header = headers.get(COOKIE)?.to_str().ok()?;
-    let raw_value = identity::learner_cookie_value(cookie_header)?;
-    Some(raw_value.parse::<i64>().ok().map(LearnerId))
+    cookies::parse_learner_cookie_presence(cookie_header)
 }
 
 /// Selects an existing Learner and sets the current-learner cookie
@@ -57,7 +56,7 @@ pub async fn select_learner(
     let mut headers = HeaderMap::new();
     headers.insert(
         SET_COOKIE,
-        identity::learner_cookie_header(learner.id, state.config().cookie_lifetime_days),
+        cookies::learner_cookie_header(learner.id, state.config().cookie_lifetime_days),
     );
 
     Ok((headers, envelope::success(learner, Utc::now())))
@@ -67,7 +66,7 @@ pub async fn select_learner(
 /// profile).
 pub async fn clear_learner_session() -> (HeaderMap, SuccessEnvelope<()>) {
     let mut headers = HeaderMap::new();
-    headers.insert(SET_COOKIE, identity::clear_learner_cookie_header());
+    headers.insert(SET_COOKIE, cookies::clear_learner_cookie_header());
 
     (headers, envelope::success_without_data(Utc::now()))
 }
@@ -90,7 +89,7 @@ pub async fn get_current_learner(
 
     let mut response_headers = HeaderMap::new();
     if learner_cookie.is_some() && learner.is_none() {
-        response_headers.insert(SET_COOKIE, identity::clear_learner_cookie_header());
+        response_headers.insert(SET_COOKIE, cookies::clear_learner_cookie_header());
     }
 
     Ok((response_headers, envelope::success(learner, Utc::now())))

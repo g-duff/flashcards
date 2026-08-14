@@ -1,6 +1,6 @@
 use server::config::{AlgorithmDefaults, Config};
 use server::state::AppState;
-use server::{db, routes};
+use server::{db, http};
 
 /// Boots the real axum app against a freshly migrated, isolated SQLite
 /// database and returns its base URL. The database file lives in a
@@ -37,7 +37,7 @@ pub async fn spawn_app() -> (String, tempfile::TempDir) {
     };
 
     let state = AppState::new(pool, config);
-    let app = routes::router(state);
+    let app = http::router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

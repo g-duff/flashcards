@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use server::state::AppState;
-use server::{config, db, routes};
+use server::{config, db, http};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -29,7 +29,7 @@ async fn main() {
     let host = config.host.clone();
     let port = config.port;
     let state = AppState::new(pool, config);
-    let app = routes::router(state).layer(TraceLayer::new_for_http());
+    let app = http::router(state).layer(TraceLayer::new_for_http());
 
     let addr: SocketAddr = format!("{host}:{port}")
         .parse()
