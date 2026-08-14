@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Project scaffolding.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `POST /api/learners` creates a Learner with a unique display name and sets the current-learner cookie; `GET /api/learners` lists Learners for profile selection.
 - [ ] Learner names are compared case-insensitively after trimming whitespace for uniqueness, while display casing is preserved; duplicate names return a `409` conflict.
