@@ -27,12 +27,12 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<Result<T, ApiError>> {
+async function apiRequest<T>(path: string, init: RequestInit): Promise<Result<T, ApiError>> {
   let response: Response
   let body: SuccessEnvelope<T> | ErrorEnvelope
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, { credentials: 'include' })
+    response = await fetch(`${API_BASE_URL}${path}`, { ...init, credentials: 'include' })
     body = (await response.json()) as SuccessEnvelope<T> | ErrorEnvelope
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Network request failed'
@@ -44,4 +44,20 @@ export async function apiGet<T>(path: string): Promise<Result<T, ApiError>> {
   }
 
   return { ok: true, value: (body.data ?? undefined) as T }
+}
+
+export function apiGet<T>(path: string): Promise<Result<T, ApiError>> {
+  return apiRequest<T>(path, {})
+}
+
+export function apiPost<T>(path: string, body: unknown): Promise<Result<T, ApiError>> {
+  return apiRequest<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export function apiDelete<T>(path: string): Promise<Result<T, ApiError>> {
+  return apiRequest<T>(path, { method: 'DELETE' })
 }
