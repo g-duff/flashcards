@@ -160,3 +160,53 @@ pub async fn delete_learner(
 
     Ok((response_headers, envelope::success_without_data(Utc::now())))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validation_error_returns_400_with_correct_error_code() {
+        let error = validation_error();
+
+        assert_eq!(error.status_code, StatusCode::BAD_REQUEST);
+        assert_eq!(error.envelope.error.code, "VALIDATION_ERROR");
+        assert_eq!(
+            error.envelope.error.message,
+            "Learner name cannot be empty."
+        );
+        assert_eq!(error.envelope.error.details.len(), 1);
+        assert_eq!(error.envelope.error.details[0].field, "name");
+        assert_eq!(error.envelope.error.details[0].reason, "Cannot be empty");
+    }
+
+    #[test]
+    fn not_found_error_returns_404_with_correct_error_code() {
+        let error = not_found_error();
+
+        assert_eq!(error.status_code, StatusCode::NOT_FOUND);
+        assert_eq!(error.envelope.error.code, "LEARNER_NOT_FOUND");
+        assert_eq!(
+            error.envelope.error.message,
+            "That learner profile no longer exists."
+        );
+        assert_eq!(error.envelope.error.details.len(), 1);
+        assert_eq!(error.envelope.error.details[0].field, "id");
+        assert_eq!(error.envelope.error.details[0].reason, "Not found");
+    }
+
+    #[test]
+    fn conflict_error_returns_409_with_correct_error_code() {
+        let error = conflict_error();
+
+        assert_eq!(error.status_code, StatusCode::CONFLICT);
+        assert_eq!(error.envelope.error.code, "LEARNER_NAME_CONFLICT");
+        assert_eq!(
+            error.envelope.error.message,
+            "A learner with this name already exists."
+        );
+        assert_eq!(error.envelope.error.details.len(), 1);
+        assert_eq!(error.envelope.error.details[0].field, "name");
+        assert_eq!(error.envelope.error.details[0].reason, "Already in use");
+    }
+}
