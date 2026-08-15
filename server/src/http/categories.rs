@@ -34,6 +34,8 @@ pub async fn create_category(
             other => internal_error(other),
         })?;
 
+    tracing::info!(category_id = %category.id, name = %category.name, "category created");
+
     Ok((StatusCode::CREATED, envelope::success(category, Utc::now())))
 }
 
@@ -93,6 +95,8 @@ pub async fn rename_category(
         })?
         .ok_or_else(not_found_error)?;
 
+    tracing::info!(category_id = %category.id, name = %category.name, "category renamed");
+
     Ok(envelope::success(category, Utc::now()))
 }
 
@@ -110,6 +114,8 @@ pub async fn delete_category(
     if !deleted {
         return Err(not_found_error());
     }
+
+    tracing::info!(category_id = %id, "category deleted");
 
     Ok(envelope::success_without_data(Utc::now()))
 }

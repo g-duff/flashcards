@@ -59,6 +59,8 @@ pub async fn select_learner(
         cookies::learner_cookie_header(learner.id, state.config().cookie_lifetime_days),
     );
 
+    tracing::info!(learner_id = %learner.id, "learner session selected");
+
     Ok((headers, envelope::success(learner, Utc::now())))
 }
 
@@ -67,6 +69,8 @@ pub async fn select_learner(
 pub async fn clear_learner_session() -> (HeaderMap, SuccessEnvelope<()>) {
     let mut headers = HeaderMap::new();
     headers.insert(SET_COOKIE, cookies::clear_learner_cookie_header());
+
+    tracing::info!("learner session cleared");
 
     (headers, envelope::success_without_data(Utc::now()))
 }
