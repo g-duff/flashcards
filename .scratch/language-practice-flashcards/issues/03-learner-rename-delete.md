@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Learner creation, selection & cookie identity.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] `PATCH /api/learners/:id` renames a Learner, preserving durable ID and all existing progress; the new name is subject to the same case-insensitive, trimmed uniqueness check as creation.
 - [x] `DELETE /api/learners/:id` removes the Learner and all personal dependent data (settings, progress, sessions, questions, submissions) but never shared Categories or Vocabulary Entries.
