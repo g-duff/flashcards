@@ -4,3 +4,4 @@ pub mod db;
 pub mod http;
 pub mod learners;
 pub mod state;
+pub mod telemetry;
