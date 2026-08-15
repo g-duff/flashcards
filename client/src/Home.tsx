@@ -2,8 +2,10 @@ import { useEffect, useState, type SubmitEvent } from 'react'
 import {
   clearLearnerSession,
   createLearner,
+  deleteLearner,
   getCurrentLearner,
   listLearners,
+  renameLearner,
   selectLearner,
   type Learner,
 } from './api/learners'
@@ -24,6 +26,14 @@ const Home = () => {
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
   const [newName, setNewName] = useState('')
   const [feedback, setFeedback] = useState<Feedback>({ kind: 'idle' })
+  const [renameValue, setRenameValue] = useState('')
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  function selectScreen(learner: Learner) {
+    setScreen({ kind: 'selected', learner })
+    setRenameValue(learner.name)
+    setConfirmingDelete(false)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -34,7 +44,7 @@ const Home = () => {
 
       const current = currentResult.ok ? currentResult.value : undefined
       if (current) {
-        setScreen({ kind: 'selected', learner: current })
+        selectScreen(current)
         return
       }
 
@@ -58,7 +68,7 @@ const Home = () => {
     if (result.ok) {
       setNewName('')
       setFeedback({ kind: 'idle' })
-      setScreen({ kind: 'selected', learner: result.value })
+      selectScreen(result.value)
       return
     }
 
@@ -71,7 +81,7 @@ const Home = () => {
     const result = await selectLearner(learnerId)
     if (result.ok) {
       setFeedback({ kind: 'idle' })
-      setScreen({ kind: 'selected', learner: result.value })
+      selectScreen(result.value)
       return
     }
 
@@ -82,6 +92,35 @@ const Home = () => {
     await clearLearnerSession()
     setFeedback({ kind: 'idle' })
     setScreen(await loadChoosingScreen())
+  }
+
+  async function handleRename(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (screen.kind !== 'selected') return
+    setFeedback({ kind: 'submitting' })
+
+    const result = await renameLearner(screen.learner.id, renameValue)
+    if (result.ok) {
+      setFeedback({ kind: 'idle' })
+      selectScreen(result.value)
+      return
+    }
+
+    setFeedback({ kind: 'error', message: result.error.message })
+  }
+
+  async function handleDelete() {
+    if (screen.kind !== 'selected') return
+    setFeedback({ kind: 'submitting' })
+
+    const result = await deleteLearner(screen.learner.id)
+    if (result.ok) {
+      setFeedback({ kind: 'idle' })
+      setScreen(await loadChoosingScreen())
+      return
+    }
+
+    setFeedback({ kind: 'error', message: result.error.message })
   }
 
   if (screen.kind === 'loading') {
@@ -101,6 +140,39 @@ const Home = () => {
         <button type="button" onClick={handleSwitchProfile}>
           Switch profile
         </button>
+
+        <form onSubmit={handleRename}>
+          <label htmlFor="rename-learner">Rename profile</label>
+          <input
+            id="rename-learner"
+            value={renameValue}
+            onChange={(event) => setRenameValue(event.target.value)}
+          />
+          <button type="submit" disabled={feedback.kind === 'submitting'}>
+            Save name
+          </button>
+        </form>
+
+        {confirmingDelete ? (
+          <div>
+            <p>
+              Delete <strong>{screen.learner.name}</strong> and all of their progress? This cannot
+              be undone.
+            </p>
+            <button type="button" onClick={handleDelete} disabled={feedback.kind === 'submitting'}>
+              Confirm delete
+            </button>
+            <button type="button" onClick={() => setConfirmingDelete(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setConfirmingDelete(true)}>
+            Delete profile
+          </button>
+        )}
+
+        {feedback.kind === 'error' && <p role="alert">{feedback.message}</p>}
       </section>
     )
   }
