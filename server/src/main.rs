@@ -5,10 +5,32 @@ use server::config::LogFormat;
 use server::state::AppState;
 use server::{config, db, http};
 use tower_http::LatencyUnit;
-use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer};
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+/// Builds the per-request `INFO` span carrying `request_id` so every log
+/// line emitted while handling the request (including handler-level
+/// domain events) can be correlated to it. `request_id` is intentionally
+/// distinct from OTel's `trace_id`/`span_id` (different field name,
+/// different header, different ID format) so a future OTel layer can be
+/// added without collision.
+fn make_request_span<B>(request: &axum::http::Request<B>) -> tracing::Span {
+    let request_id = request
+        .extensions()
+        .get::<RequestId>()
+        .and_then(|id| id.header_value().to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info_span!(
+        "request",
+        method = %request.method(),
+        uri = %request.uri(),
+        request_id = %request_id,
+    )
+}
 
 #[tokio::main]
 async fn main() {
@@ -42,15 +64,18 @@ async fn main() {
     let host = config.host.clone();
     let port = config.port;
     let state = AppState::new(pool, config);
-    let app = http::router(state).layer(
-        TraceLayer::new_for_http()
-            .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
-            .on_response(
-                DefaultOnResponse::new()
-                    .level(Level::INFO)
-                    .latency_unit(LatencyUnit::Millis),
-            ),
-    );
+    let app = http::router(state)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(make_request_span)
+                .on_response(
+                    DefaultOnResponse::new()
+                        .level(Level::INFO)
+                        .latency_unit(LatencyUnit::Millis),
+                ),
+        )
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
 
     let addr: SocketAddr = format!("{host}:{port}").parse().unwrap_or_else(|error| {
         tracing::error!(error = %error, host = %host, port, "invalid host/port");
