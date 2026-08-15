@@ -14,3 +14,18 @@
 - [ ] `DELETE /api/vocabulary-entries/:id` removes the entry, its Category Memberships, Direction-specific Progress, and practice history in one transaction.
 - [ ] Client "Add Vocabulary" screen supports single-entry creation (text, languages, one or more Categories) and shows validation/duplicate errors.
 - [ ] HTTP integration tests cover: creation, missing-Category `400`, duplicate-pair `409`, language normalization/validation, immutable-language rejection on edit, edit of text/memberships, delete cascade cleanup.
+
+## Deferred from ticket 04
+
+Ticket 04 (Shared Category CRUD) required `DELETE /api/categories/:id` to
+reject with `409` when it would remove the final Category Membership of any
+Vocabulary Entry, and required `GET /api/categories` to include
+current-Learner proficiency. Both were deferred here because they depend on
+types this ticket introduces (Vocabulary Entries, Category Memberships,
+Direction-specific Progress), and ticket 04's own "Blocked by" only listed
+ticket 02 — so ticket 04 was implemented without them rather than pulling
+this ticket's schema forward early. Pick these up as part of this ticket:
+
+- [ ] `DELETE /api/categories/:id` is rejected with `409` when it would remove the final Category Membership of any Vocabulary Entry; deletion never cascade-deletes Vocabulary Entries. In scope for this ticket, since it only needs Vocabulary Entries and Category Memberships, both introduced here.
+- [ ] HTTP integration test: unsafe Category deletion is rejected with `409`.
+- [ ] `GET /api/categories` includes current-Learner proficiency per spec.md's route table (spec.md story 27–29). Out of scope for this ticket too — proficiency needs Direction-specific Progress, which isn't introduced until ticket 08 (Answer submission & progress tracking). Re-deferred to ticket 08 rather than picked up here.

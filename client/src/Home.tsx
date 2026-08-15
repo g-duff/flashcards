@@ -9,6 +9,7 @@ import {
   selectLearner,
   type Learner,
 } from './api/learners'
+import Categories from './Categories'
 
 type Screen =
   | { kind: 'loading' }
@@ -173,6 +174,8 @@ const Home = () => {
         )}
 
         {feedback.kind === 'error' && <p role="alert">{feedback.message}</p>}
+
+        <Categories />
       </section>
     )
   }

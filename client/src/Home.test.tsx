@@ -23,6 +23,19 @@ const bea = {
   updated_at: '2026-08-12T00:00:00Z',
 }
 
+/**
+ * Routes a mocked fetch call by URL substring, falling back to an empty
+ * list. Keeps these tests resilient to unrelated fetches fired by
+ * components mounted alongside the one under test (e.g. Categories, which
+ * fetches on mount whenever a learner is selected).
+ */
+function routedFetch(routes: Record<string, unknown>) {
+  return vi.fn().mockImplementation((url: string) => {
+    const match = Object.entries(routes).find(([path]) => url.includes(path))
+    return jsonResponse(successEnvelope(match ? match[1] : []))
+  })
+}
+
 describe('Home', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -35,10 +48,7 @@ describe('Home', () => {
   // Home screen: display the current Learner when the cookie already
   // resolves one (spec.md story 3; ticket 02).
   it('shows the current learner when the session cookie already resolves one', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation(() => jsonResponse(successEnvelope(alice))),
-    )
+    vi.stubGlobal('fetch', routedFetch({ '/api/session/learner': alice }))
 
     render(<Home />)
 
@@ -50,10 +60,7 @@ describe('Home', () => {
   // the Home profile-choosing screen rather than getting stuck (spec.md
   // story 4; ticket 02).
   it('shows the Home profile-choosing screen when the session resolves to no learner', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation(() => jsonResponse(successEnvelope(null))),
-    )
+    vi.stubGlobal('fetch', routedFetch({ '/api/session/learner': null }))
 
     render(<Home />)
 
@@ -64,11 +71,7 @@ describe('Home', () => {
   // Home screen: create a Learner and it becomes the current Learner
   // (spec.md story 1; ticket 02).
   it('lets a learner create a new profile and become the current learner', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(null)) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope([])) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(bea)) })
+    const fetchMock = routedFetch({ '/api/session/learner': null, '/api/learners': bea })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<Home />)
@@ -78,18 +81,27 @@ describe('Home', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create profile' }))
 
     expect(await screen.findByText('Bea')).toBeInTheDocument()
-    expect(fetchMock.mock.calls[2][0]).toContain('/api/learners')
-    expect(fetchMock.mock.calls[2][1]?.method).toBe('POST')
+    const createCall = fetchMock.mock.calls.find(
+      (call) => call[1]?.method === 'POST' && call[0].includes('/api/learners'),
+    )
+    expect(createCall).toBeDefined()
   })
 
   // Home screen: select an existing Learner and it becomes the current
   // Learner (spec.md story 2; ticket 02).
   it('lets a learner select an existing profile', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(null)) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope([alice])) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(alice)) })
+    const fetchMock = routedFetch({
+      '/api/session/learner': null,
+      '/api/learners': [alice],
+    })
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/session/learner') && init?.method === 'POST') {
+        return jsonResponse(successEnvelope(alice))
+      }
+      if (url.includes('/api/session/learner')) return jsonResponse(successEnvelope(null))
+      if (url.includes('/api/learners')) return jsonResponse(successEnvelope([alice]))
+      return jsonResponse(successEnvelope([]))
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<Home />)
@@ -98,28 +110,30 @@ describe('Home', () => {
     fireEvent.click(selectButton)
 
     expect(await screen.findByRole('button', { name: 'Switch profile' })).toBeInTheDocument()
-    expect(fetchMock.mock.calls[2][0]).toContain('/api/session/learner')
+    const selectCall = fetchMock.mock.calls.find(
+      (call) => call[1]?.method === 'POST' && call[0].includes('/api/session/learner'),
+    )
+    expect(selectCall).toBeDefined()
   })
 
   // Duplicate-name conflicts surface as inline feedback rather than
   // silently failing (spec.md story 6; ticket 02).
   it('shows an error when creating a learner with a duplicate name', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(null)) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope([])) })
-      .mockResolvedValueOnce({
-        json: () =>
-          Promise.resolve({
-            status: 'error',
-            error: {
-              code: 'LEARNER_NAME_CONFLICT',
-              message: 'A learner with this name already exists.',
-              details: [{ field: 'name', reason: 'Already in use' }],
-            },
-            meta: { timestamp: '2026-08-12T00:00:00Z' },
-          }),
-      })
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/session/learner')) return jsonResponse(successEnvelope(null))
+      if (url.includes('/api/learners') && init?.method === 'POST') {
+        return jsonResponse({
+          status: 'error',
+          error: {
+            code: 'LEARNER_NAME_CONFLICT',
+            message: 'A learner with this name already exists.',
+            details: [{ field: 'name', reason: 'Already in use' }],
+          },
+          meta: { timestamp: '2026-08-12T00:00:00Z' },
+        })
+      }
+      return jsonResponse(successEnvelope([]))
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<Home />)
@@ -137,10 +151,13 @@ describe('Home', () => {
   // story 5; ticket 03).
   it('lets the current learner rename their profile', async () => {
     const renamed = { ...alice, name: 'Alicia' }
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(alice)) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(renamed)) })
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/learners/1') && init?.method === 'PATCH') {
+        return jsonResponse(successEnvelope(renamed))
+      }
+      if (url.includes('/api/session/learner')) return jsonResponse(successEnvelope(alice))
+      return jsonResponse(successEnvelope([]))
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<Home />)
@@ -150,18 +167,26 @@ describe('Home', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save name' }))
 
     expect(await screen.findByText('Alicia')).toBeInTheDocument()
-    expect(fetchMock.mock.calls[1][0]).toContain('/api/learners/1')
-    expect(fetchMock.mock.calls[1][1]?.method).toBe('PATCH')
+    const renameCall = fetchMock.mock.calls.find(
+      (call) => call[1]?.method === 'PATCH' && call[0].includes('/api/learners/1'),
+    )
+    expect(renameCall).toBeDefined()
   })
 
   // A Learner can deliberately delete their profile, so their personal data
   // is removed (spec.md story 7; ticket 03).
   it('lets the current learner delete their profile after confirming', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(alice)) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(null)) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope([])) })
+    let deleted = false
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/learners/1') && init?.method === 'DELETE') {
+        deleted = true
+        return jsonResponse(successEnvelope(null))
+      }
+      if (url.includes('/api/session/learner')) {
+        return jsonResponse(successEnvelope(deleted ? null : alice))
+      }
+      return jsonResponse(successEnvelope([]))
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<Home />)
@@ -170,15 +195,18 @@ describe('Home', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
 
     expect(await screen.findByRole('heading', { name: 'Choose a profile' })).toBeInTheDocument()
-    expect(fetchMock.mock.calls[1][0]).toContain('/api/learners/1')
-    expect(fetchMock.mock.calls[1][1]?.method).toBe('DELETE')
+    const deleteCall = fetchMock.mock.calls.find(
+      (call) => call[1]?.method === 'DELETE' && call[0].includes('/api/learners/1'),
+    )
+    expect(deleteCall).toBeDefined()
   })
 
   // Cancelling the delete confirmation leaves the profile untouched.
   it('lets the current learner cancel a delete confirmation', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(alice)) })
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/session/learner')) return jsonResponse(successEnvelope(alice))
+      return jsonResponse(successEnvelope([]))
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     render(<Home />)
@@ -187,6 +215,7 @@ describe('Home', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(screen.queryByRole('button', { name: 'Confirm delete' })).not.toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const writeCall = fetchMock.mock.calls.find((call) => call[1]?.method !== undefined)
+    expect(writeCall).toBeUndefined()
   })
 })

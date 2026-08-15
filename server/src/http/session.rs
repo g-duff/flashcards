@@ -131,7 +131,10 @@ mod tests {
     #[test]
     fn learner_cookie_from_request_parses_valid_numeric_id() {
         let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, "theme=dark; learner_id=42; other=1".parse().unwrap());
+        headers.insert(
+            COOKIE,
+            "theme=dark; learner_id=42; other=1".parse().unwrap(),
+        );
 
         let result = learner_cookie_from_request(&headers);
 
