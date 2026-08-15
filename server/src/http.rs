@@ -42,6 +42,10 @@ pub fn router(state: AppState) -> Router {
             get(learners::list_learners).post(learners::create_learner),
         )
         .route(
+            "/api/learners/{id}",
+            axum::routing::patch(learners::rename_learner).delete(learners::delete_learner),
+        )
+        .route(
             "/api/session/learner",
             get(session::get_current_learner)
                 .post(session::select_learner)

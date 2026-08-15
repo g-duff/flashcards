@@ -72,6 +72,43 @@ pub async fn find_by_id(
     Ok(row.map(Learner::from))
 }
 
+/// Renames a Learner in place, preserving its durable ID and all existing
+/// progress. Returns `None` if no Learner with that ID exists (ticket 03).
+pub async fn rename(
+    pool: &SqlitePool,
+    id: LearnerId,
+    name: &LearnerName,
+    now: DateTime<Utc>,
+) -> Result<Option<Learner>, RepositoryError> {
+    let row = sqlx::query_as::<_, LearnerRow>(
+        "UPDATE learners SET name = ?, normalized_name = ?, updated_at = ?
+         WHERE id = ?
+         RETURNING id, name, created_at, updated_at",
+    )
+    .bind(&name.display)
+    .bind(&name.normalized)
+    .bind(now)
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(map_insert_error)?;
+
+    Ok(row.map(Learner::from))
+}
+
+/// Deletes a Learner by durable ID. Returns whether a row was removed.
+/// Shared Categories and Vocabulary Entries are never touched; personal
+/// dependent data (settings, progress, sessions, questions, submissions)
+/// will cascade once those tables exist (ticket 03).
+pub async fn delete(pool: &SqlitePool, id: LearnerId) -> Result<bool, RepositoryError> {
+    let result = sqlx::query("DELETE FROM learners WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 #[derive(Debug, sqlx::FromRow)]
 struct LearnerRow {
     id: LearnerId,

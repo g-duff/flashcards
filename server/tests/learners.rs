@@ -263,6 +263,256 @@ async fn an_invalid_cookie_is_cleared_by_the_server() {
     assert!(body["data"].is_null());
 }
 
+// `PATCH /api/learners/:id` renames a Learner while preserving its durable
+// ID (spec.md story 5; ticket 03).
+#[tokio::test]
+async fn renaming_a_learner_preserves_identity() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let create_response = client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Alice" }))
+        .send()
+        .await
+        .expect("request failed");
+    let created: serde_json::Value = create_response.json().await.expect("invalid json body");
+    let learner_id = created["data"]["id"].as_i64().unwrap();
+
+    let response = client
+        .patch(format!("{base_url}/api/learners/{learner_id}"))
+        .json(&json!({ "name": "  Alicia  " }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["data"]["id"], learner_id);
+    assert_eq!(body["data"]["name"], "Alicia");
+
+    let list_response = client
+        .get(format!("{base_url}/api/learners"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    let learners = list_body["data"].as_array().expect("expected an array");
+    assert_eq!(learners.len(), 1);
+    assert_eq!(learners[0]["id"], learner_id);
+    assert_eq!(learners[0]["name"], "Alicia");
+}
+
+// Renaming into a name already used by another Learner conflicts, using the
+// same case-insensitive, trimmed uniqueness check as creation (spec.md
+// story 5, 6; ticket 03).
+#[tokio::test]
+async fn renaming_a_learner_to_an_existing_name_conflicts() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Alice" }))
+        .send()
+        .await
+        .expect("request failed");
+
+    let bob_response = client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Bob" }))
+        .send()
+        .await
+        .expect("request failed");
+    let bob: serde_json::Value = bob_response.json().await.expect("invalid json body");
+    let bob_id = bob["data"]["id"].as_i64().unwrap();
+
+    let response = client
+        .patch(format!("{base_url}/api/learners/{bob_id}"))
+        .json(&json!({ "name": "  alice  " }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 409);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "LEARNER_NAME_CONFLICT");
+}
+
+// Renaming an unknown Learner returns 404 rather than silently succeeding.
+#[tokio::test]
+async fn renaming_an_unknown_learner_returns_not_found() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .patch(format!("{base_url}/api/learners/999"))
+        .json(&json!({ "name": "Ghost" }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 404);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "LEARNER_NOT_FOUND");
+}
+
+// `DELETE /api/learners/:id` removes only the Learner's own data, never
+// shared content, and other Learners remain listable (spec.md story 7;
+// ticket 03).
+#[tokio::test]
+async fn deleting_a_learner_removes_only_that_learner() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let alice_response = client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Alice" }))
+        .send()
+        .await
+        .expect("request failed");
+    let alice: serde_json::Value = alice_response.json().await.expect("invalid json body");
+    let alice_id = alice["data"]["id"].as_i64().unwrap();
+
+    client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Bob" }))
+        .send()
+        .await
+        .expect("request failed");
+
+    let response = client
+        .delete(format!("{base_url}/api/learners/{alice_id}"))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["status"], "success");
+    assert!(body["data"].is_null());
+
+    let list_response = client
+        .get(format!("{base_url}/api/learners"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    let names: Vec<&str> = list_body["data"]
+        .as_array()
+        .expect("expected an array")
+        .iter()
+        .map(|learner| learner["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["Bob"]);
+}
+
+// Deleting an unknown Learner returns 404.
+#[tokio::test]
+async fn deleting_an_unknown_learner_returns_not_found() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .delete(format!("{base_url}/api/learners/999"))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 404);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "LEARNER_NOT_FOUND");
+}
+
+// Deleting the current Learner clears the current-learner cookie (spec.md
+// story: cookie identity invalidation; ticket 03).
+#[tokio::test]
+async fn deleting_the_current_learner_clears_the_cookie() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::builder()
+        .cookie_store(true)
+        .build()
+        .expect("failed to build client");
+
+    let create_response = client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Alice" }))
+        .send()
+        .await
+        .expect("request failed");
+    let created: serde_json::Value = create_response.json().await.expect("invalid json body");
+    let learner_id = created["data"]["id"].as_i64().unwrap();
+
+    let response = client
+        .delete(format!("{base_url}/api/learners/{learner_id}"))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 200);
+    let set_cookie = response
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .expect("expected the cookie to be cleared")
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(set_cookie.contains("Max-Age=0"));
+
+    let current = client
+        .get(format!("{base_url}/api/session/learner"))
+        .send()
+        .await
+        .expect("request failed");
+    let current_body: serde_json::Value = current.json().await.expect("invalid json body");
+    assert!(current_body["data"].is_null());
+}
+
+// Deleting a Learner who is not the current cookie identity leaves the
+// cookie untouched.
+#[tokio::test]
+async fn deleting_a_different_learner_does_not_clear_the_cookie() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::builder()
+        .cookie_store(true)
+        .build()
+        .expect("failed to build client");
+
+    let alice_response = client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Alice" }))
+        .send()
+        .await
+        .expect("request failed");
+    let alice: serde_json::Value = alice_response.json().await.expect("invalid json body");
+    let alice_id = alice["data"]["id"].as_i64().unwrap();
+
+    let bob_response = client
+        .post(format!("{base_url}/api/learners"))
+        .json(&json!({ "name": "Bob" }))
+        .send()
+        .await
+        .expect("request failed");
+    let bob: serde_json::Value = bob_response.json().await.expect("invalid json body");
+    let bob_id = bob["data"]["id"].as_i64().unwrap();
+
+    // Bob's creation set the cookie to Bob; deleting Alice should not clear it.
+    let response = client
+        .delete(format!("{base_url}/api/learners/{alice_id}"))
+        .send()
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), 200);
+
+    let current = client
+        .get(format!("{base_url}/api/session/learner"))
+        .send()
+        .await
+        .expect("request failed");
+    let current_body: serde_json::Value = current.json().await.expect("invalid json body");
+    assert_eq!(current_body["data"]["id"], bob_id);
+}
+
 // With no cookie at all, there is simply no current Learner (not an error).
 #[tokio::test]
 async fn no_cookie_means_no_current_learner() {
