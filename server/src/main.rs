@@ -5,7 +5,9 @@ use server::config::LogFormat;
 use server::state::AppState;
 use server::{config, db, http};
 use tower_http::LatencyUnit;
-use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer};
+use tower_http::request_id::{
+    MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
+};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use tracing_subscriber::layer::SubscriberExt;
@@ -42,13 +44,15 @@ async fn main() {
         panic!("failed to load config from {config_path:?}: {error}");
     });
 
-    let filter = tracing_subscriber::EnvFilter::try_new(&config.logging.level)
-        .unwrap_or_else(|error| {
+    let filter =
+        tracing_subscriber::EnvFilter::try_new(&config.logging.level).unwrap_or_else(|error| {
             panic!("invalid logging.level {:?}: {error}", config.logging.level)
         });
     let registry = tracing_subscriber::registry().with(filter);
     match config.logging.format {
-        LogFormat::Json => registry.with(tracing_subscriber::fmt::layer().json()).init(),
+        LogFormat::Json => registry
+            .with(tracing_subscriber::fmt::layer().json())
+            .init(),
         LogFormat::Text => registry.with(tracing_subscriber::fmt::layer()).init(),
     }
 
