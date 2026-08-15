@@ -232,6 +232,20 @@ While strict functional purity is impossible in a systems language, we strive to
 
 ---
 
+## 7. Logging
+
+Logging is a side effect and belongs in the imperative shell (handlers, repositories, `main.rs`) — never in the functional core.
+
+* **Use `tracing`, not `println!`/`eprintln!`.** Log via `tracing::info!`/`warn!`/`error!` so every line goes through the configured subscriber and inherits span context.
+* **Structured fields, not interpolated strings.** Pass values as fields (`tracing::info!(learner_id = %id, name = %name, "learner created")`), not baked into the message string, so both text and JSON output stay parseable.
+* **Config-driven, not env-var-driven.** Log format (`text`/`json`) and level (an `EnvFilter` directive) are read from the `logging` section of the YAML config (`config.yaml` / `config.container.yaml`), validated in `config/validate.rs` like every other setting — not from ad hoc environment variables.
+* **JSON output uses `tracing-subscriber`'s `json` feature.** No separate JSON logging crate; it's a Cargo feature flag on a dependency we already have.
+* **Log at layer boundaries, not inside pure logic.** One `INFO` line per successful mutation (create/rename/delete) in the HTTP handler that performs it, and one `ERROR` line at the point an infrastructure failure is mapped to an HTTP error response (see `internal_error` in `src/http.rs`). Don't log inside repository/domain functions themselves unless they are the shell (e.g. `db.rs` connection/migration).
+* **Every request carries a `request_id`.** Generated (or accepted from an inbound `x-request-id` header) by `tower_http`'s request-id middleware, attached to the request's `tracing` span in `main.rs`. Handler-level logs pick it up automatically via span nesting — do not thread it through function parameters or log it manually.
+* **Keep `request_id` distinct from future OTel fields.** It uses its own field name, its own header (`x-request-id`, not `traceparent`), and its own ID format (UUID v4, not a W3C trace-id), so a `tracing-opentelemetry` layer can be added later without colliding with it.
+
+---
+
 
 ## Testing
 
