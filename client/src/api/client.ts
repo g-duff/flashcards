@@ -61,3 +61,11 @@ export function apiPost<T>(path: string, body: unknown): Promise<Result<T, ApiEr
 export function apiDelete<T>(path: string): Promise<Result<T, ApiError>> {
   return apiRequest<T>(path, { method: 'DELETE' })
 }
+
+export function apiPatch<T>(path: string, body: unknown): Promise<Result<T, ApiError>> {
+  return apiRequest<T>(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}

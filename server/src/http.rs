@@ -42,10 +42,32 @@ pub fn router(state: AppState) -> Router {
             get(learners::list_learners).post(learners::create_learner),
         )
         .route(
+            "/api/learners/{id}",
+            axum::routing::patch(learners::rename_learner).delete(learners::delete_learner),
+        )
+        .route(
             "/api/session/learner",
             get(session::get_current_learner)
                 .post(session::select_learner)
                 .delete(session::clear_learner_session),
         )
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn internal_error_returns_500_with_correct_error_code() {
+        let error = internal_error(RepositoryError::DuplicateName);
+
+        assert_eq!(error.status_code, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(error.envelope.error.code, "INTERNAL_ERROR");
+        assert_eq!(
+            error.envelope.error.message,
+            "Something went wrong. Please try again."
+        );
+        assert!(error.envelope.error.details.is_empty());
+    }
 }

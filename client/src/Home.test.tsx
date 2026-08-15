@@ -132,4 +132,61 @@ describe('Home', () => {
       'A learner with this name already exists.',
     )
   })
+
+  // A Learner can rename their profile without losing identity (spec.md
+  // story 5; ticket 03).
+  it('lets the current learner rename their profile', async () => {
+    const renamed = { ...alice, name: 'Alicia' }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(alice)) })
+      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(renamed)) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Home />)
+
+    const input = await screen.findByLabelText('Rename profile')
+    fireEvent.change(input, { target: { value: 'Alicia' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }))
+
+    expect(await screen.findByText('Alicia')).toBeInTheDocument()
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/learners/1')
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('PATCH')
+  })
+
+  // A Learner can deliberately delete their profile, so their personal data
+  // is removed (spec.md story 7; ticket 03).
+  it('lets the current learner delete their profile after confirming', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(alice)) })
+      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(null)) })
+      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope([])) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Home />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete profile' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+
+    expect(await screen.findByRole('heading', { name: 'Choose a profile' })).toBeInTheDocument()
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/learners/1')
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('DELETE')
+  })
+
+  // Cancelling the delete confirmation leaves the profile untouched.
+  it('lets the current learner cancel a delete confirmation', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ json: () => Promise.resolve(successEnvelope(alice)) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Home />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete profile' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('button', { name: 'Confirm delete' })).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

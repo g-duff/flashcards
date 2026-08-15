@@ -94,3 +94,47 @@ pub async fn get_current_learner(
 
     Ok((response_headers, envelope::success(learner, Utc::now())))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn learner_cookie_from_request_returns_none_when_no_cookie_header() {
+        let headers = HeaderMap::new();
+
+        let result = learner_cookie_from_request(&headers);
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn learner_cookie_from_request_returns_none_when_learner_id_cookie_absent() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "theme=dark; other=value".parse().unwrap());
+
+        let result = learner_cookie_from_request(&headers);
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn learner_cookie_from_request_returns_some_none_for_non_numeric_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "learner_id=not-a-number".parse().unwrap());
+
+        let result = learner_cookie_from_request(&headers);
+
+        assert_eq!(result, Some(None));
+    }
+
+    #[test]
+    fn learner_cookie_from_request_parses_valid_numeric_id() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "theme=dark; learner_id=42; other=1".parse().unwrap());
+
+        let result = learner_cookie_from_request(&headers);
+
+        assert_eq!(result, Some(Some(LearnerId(42))));
+    }
+}
