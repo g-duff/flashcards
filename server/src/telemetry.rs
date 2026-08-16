@@ -1,5 +1,4 @@
 use crate::config::{LogFormat, LoggingConfig};
-use axum::Router;
 use tower_http::LatencyUnit;
 use tower_http::request_id::{
     MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
@@ -22,7 +21,7 @@ pub fn init(config: &LoggingConfig) {
     }
 }
 
-pub fn instrument_http(router: Router) -> Router {
+pub fn instrument_http(router: axum::Router) -> axum::Router {
     router
         .layer(
             TraceLayer::new_for_http()
