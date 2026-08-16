@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
+    "dev": "vite",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run",
-    "preview": "vite preview"
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "start": "vite",
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^19.2.8",
