@@ -100,16 +100,19 @@ pub async fn rename_category(
     Ok(envelope::success(category, Utc::now()))
 }
 
-/// Deletes a Category. Never cascade-deletes Vocabulary Entries; rejection
-/// of unsafe deletion (orphaning a Vocabulary Entry) is added alongside
-/// Category Memberships in ticket 05 (spec.md story 11, 12).
+/// Deletes a Category. Never cascade-deletes Vocabulary Entries; rejected
+/// with `409` when it would remove the final Category Membership of any
+/// Vocabulary Entry (spec.md story 11, 12).
 pub async fn delete_category(
     State(state): State<AppState>,
     Path(id): Path<CategoryId>,
 ) -> Result<SuccessEnvelope<()>, ErrorResponse> {
     let deleted = repository::delete(state.db(), id)
         .await
-        .map_err(internal_error)?;
+        .map_err(|error| match error {
+            RepositoryError::WouldOrphanEntry => orphan_conflict_error(),
+            other => internal_error(other),
+        })?;
 
     if !deleted {
         return Err(not_found_error());
@@ -159,6 +162,21 @@ fn conflict_error() -> ErrorResponse {
             vec![ErrorDetail {
                 field: "name".to_string(),
                 reason: "Already in use".to_string(),
+            }],
+            Utc::now(),
+        ),
+    }
+}
+
+fn orphan_conflict_error() -> ErrorResponse {
+    ErrorResponse {
+        status_code: StatusCode::CONFLICT,
+        envelope: envelope::error(
+            "CATEGORY_WOULD_ORPHAN_ENTRY",
+            "This category cannot be deleted because a vocabulary entry depends on it.",
+            vec![ErrorDetail {
+                field: "id".to_string(),
+                reason: "Would orphan a vocabulary entry".to_string(),
             }],
             Utc::now(),
         ),
