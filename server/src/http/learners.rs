@@ -45,6 +45,8 @@ pub async fn create_learner(
 
     let cookie = cookies::learner_cookie_header(learner.id, state.config().cookie_lifetime_days);
 
+    tracing::info!(learner_id = %learner.id, name = %learner.name, "learner created");
+
     Ok((
         StatusCode::CREATED,
         [(SET_COOKIE, cookie)],
@@ -130,6 +132,8 @@ pub async fn rename_learner(
         })?
         .ok_or_else(not_found_error)?;
 
+    tracing::info!(learner_id = %learner.id, name = %learner.name, "learner renamed");
+
     Ok(envelope::success(learner, Utc::now()))
 }
 
@@ -148,6 +152,8 @@ pub async fn delete_learner(
     if !deleted {
         return Err(not_found_error());
     }
+
+    tracing::info!(learner_id = %id, "learner deleted");
 
     let mut response_headers = HeaderMap::new();
     let current_cookie = request_headers

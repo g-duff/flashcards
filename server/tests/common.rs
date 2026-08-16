@@ -1,4 +1,4 @@
-use server::config::{AlgorithmDefaults, Config};
+use server::config::{AlgorithmDefaults, Config, LogFormat, LoggingConfig};
 use server::state::AppState;
 use server::{db, http};
 
@@ -33,6 +33,10 @@ pub async fn spawn_app() -> (String, tempfile::TempDir) {
             incorrect_weight: 3.0,
             time_decay_factor: 0.5,
             base_priority: 0.0,
+        },
+        logging: LoggingConfig {
+            format: LogFormat::Text,
+            level: "info".to_string(),
         },
     };
 

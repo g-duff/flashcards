@@ -3,6 +3,7 @@
 //! boundary, as distinct from domain logic (`learners`, `config`) and
 //! infrastructure (`db`, `state`).
 
+pub mod categories;
 pub mod cookies;
 pub mod envelope;
 pub mod health;
@@ -15,14 +16,13 @@ use axum::routing::get;
 use chrono::Utc;
 
 use self::envelope::ErrorResponse;
-use crate::learners::repository::RepositoryError;
 use crate::state::AppState;
 
 /// Maps an unexpected repository failure to the standard `500` envelope,
 /// logging the underlying cause. Shared by every route module that talks to
-/// the Learner repository.
-pub(crate) fn internal_error(source: RepositoryError) -> ErrorResponse {
-    tracing::error!(error = %source, "learner repository operation failed");
+/// a repository.
+pub(crate) fn internal_error(source: impl std::error::Error) -> ErrorResponse {
+    tracing::error!(error = %source, "repository operation failed");
     ErrorResponse {
         status_code: StatusCode::INTERNAL_SERVER_ERROR,
         envelope: envelope::error(
@@ -46,6 +46,16 @@ pub fn router(state: AppState) -> Router {
             axum::routing::patch(learners::rename_learner).delete(learners::delete_learner),
         )
         .route(
+            "/api/categories",
+            get(categories::list_categories).post(categories::create_category),
+        )
+        .route(
+            "/api/categories/{id}",
+            get(categories::get_category)
+                .patch(categories::rename_category)
+                .delete(categories::delete_category),
+        )
+        .route(
             "/api/session/learner",
             get(session::get_current_learner)
                 .post(session::select_learner)
@@ -60,7 +70,7 @@ mod tests {
 
     #[test]
     fn internal_error_returns_500_with_correct_error_code() {
-        let error = internal_error(RepositoryError::DuplicateName);
+        let error = internal_error(crate::learners::repository::RepositoryError::DuplicateName);
 
         assert_eq!(error.status_code, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(error.envelope.error.code, "INTERNAL_ERROR");

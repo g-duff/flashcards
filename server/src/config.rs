@@ -8,7 +8,7 @@ use thiserror::Error;
 
 pub mod validate;
 
-pub use validate::{AlgorithmDefaults, Config, ConfigError};
+pub use validate::{AlgorithmDefaults, Config, ConfigError, LogFormat, LoggingConfig};
 
 /// Raw shape deserialized directly from the YAML file, before validation.
 #[derive(Debug, Deserialize)]
@@ -23,6 +23,14 @@ pub struct RawConfig {
     pub question_count_max: u32,
     pub supported_languages: Vec<String>,
     pub algorithm_defaults: AlgorithmDefaults,
+    pub logging: RawLoggingConfig,
+}
+
+/// Raw shape of the `logging` section, before validation.
+#[derive(Debug, Deserialize)]
+pub struct RawLoggingConfig {
+    pub format: String,
+    pub level: String,
 }
 
 #[derive(Debug, Error)]
