@@ -59,7 +59,16 @@
   padding: 0.4rem 0.6rem;
 }
 
+.categories li {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .categories li input {
   flex: 1;
-  margin-bottom: 0;
+  margin-bottom: 0.4rem;
+}
+
+.categories li button {
+  width: 100%;
 }
