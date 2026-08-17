@@ -1,6 +1,6 @@
 import type { Result } from './types/effects'
 
-/** One parsed row of the `source | target | category` convenience format. */
+/** One parsed row of the `source <delimiter> target <delimiter> category` convenience format. */
 export type BulkImportRow = {
   sourceText: string
   targetText: string
@@ -12,13 +12,33 @@ export type BulkImportRowError = {
   reason: string
 }
 
+/** A delimiter offered in the bulk-import UI, with a human-readable label. */
+export type BulkImportDelimiterOption = {
+  label: string
+  value: string
+}
+
+export const BULK_IMPORT_DELIMITER_OPTIONS: BulkImportDelimiterOption[] = [
+  { label: 'Bar ( | )', value: '|' },
+  { label: 'Comma ( , )', value: ',' },
+  { label: 'Semicolon ( ; )', value: ';' },
+  { label: 'Tab', value: '\t' },
+]
+
+export const DEFAULT_BULK_IMPORT_DELIMITER = '|'
+
 /**
- * Parses pasted `source | target | category` rows (spec.md story 24, 30;
- * grilled-spec.md sec. 3). Pipe-delimited, not CSV — no comma splitting or
- * quote handling. Blank lines are ignored. Any malformed row fails the whole
- * parse — the caller cannot submit a partially valid paste.
+ * Parses pasted `source <delimiter> target <delimiter> category` rows
+ * (spec.md story 24, 30; grilled-spec.md sec. 3). The delimiter is
+ * caller-chosen — this is delimiter-separated text, not CSV, so there is no
+ * comma splitting or quote handling. Blank lines are ignored. Any malformed
+ * row fails the whole parse — the caller cannot submit a partially valid
+ * paste.
  */
-export function parsePipeDelimitedRows(raw: string): Result<BulkImportRow[], BulkImportRowError[]> {
+export function parseDelimitedRows(
+  raw: string,
+  delimiter: string,
+): Result<BulkImportRow[], BulkImportRowError[]> {
   const lines = raw
     .split('\n')
     .map((line) => line.trim())
@@ -28,14 +48,16 @@ export function parsePipeDelimitedRows(raw: string): Result<BulkImportRow[], Bul
     return { ok: false, error: [{ line: 0, reason: 'Paste at least one row' }] }
   }
 
+  const expectedShape = `Expected "source ${delimiter} target ${delimiter} category"`
+
   const { rows, errors } = lines.reduce<{
     rows: BulkImportRow[]
     errors: BulkImportRowError[]
   }>(
     (accumulator, line, index) => {
-      const fields = line.split('|').map((field) => field.trim())
+      const fields = line.split(delimiter).map((field) => field.trim())
       if (fields.length !== 3 || fields.some((field) => field.length === 0)) {
-        const error = { line: index + 1, reason: 'Expected "source | target | category"' }
+        const error = { line: index + 1, reason: expectedShape }
         return { ...accumulator, errors: [...accumulator.errors, error] }
       }
 

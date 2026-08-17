@@ -2,7 +2,11 @@ import { useEffect, useState, type SubmitEvent } from 'react'
 import { type ApiError } from './api/client'
 import { listCategories, type Category } from './api/categories'
 import { bulkCreateVocabularyEntries, createVocabularyEntry } from './api/vocabularyEntries'
-import { parsePipeDelimitedRows } from './bulkImport'
+import {
+  BULK_IMPORT_DELIMITER_OPTIONS,
+  DEFAULT_BULK_IMPORT_DELIMITER,
+  parseDelimitedRows,
+} from './bulkImport'
 
 type CategoriesScreen =
   | { kind: 'loading' }
@@ -41,9 +45,10 @@ const AddVocabulary = () => {
   const [bulkSourceLanguage, setBulkSourceLanguage] = useState('')
   const [bulkTargetLanguage, setBulkTargetLanguage] = useState('')
   const [bulkPasteText, setBulkPasteText] = useState('')
+  const [bulkDelimiter, setBulkDelimiter] = useState(DEFAULT_BULK_IMPORT_DELIMITER)
   const [bulkFeedback, setBulkFeedback] = useState<Feedback>({ kind: 'idle' })
 
-  const bulkParseResult = parsePipeDelimitedRows(bulkPasteText)
+  const bulkParseResult = parseDelimitedRows(bulkPasteText, bulkDelimiter)
 
   useEffect(() => {
     let cancelled = false
@@ -185,7 +190,22 @@ const AddVocabulary = () => {
           onChange={(event) => setBulkTargetLanguage(event.target.value)}
         />
 
-        <label htmlFor="bulk-rows">Paste rows as "source | target | category"</label>
+        <label htmlFor="bulk-delimiter">Delimiter</label>
+        <select
+          id="bulk-delimiter"
+          value={bulkDelimiter}
+          onChange={(event) => setBulkDelimiter(event.target.value)}
+        >
+          {BULK_IMPORT_DELIMITER_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="bulk-rows">
+          Paste rows as "source {bulkDelimiter} target {bulkDelimiter} category"
+        </label>
         <textarea
           id="bulk-rows"
           value={bulkPasteText}

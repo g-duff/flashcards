@@ -160,6 +160,42 @@ describe('AddVocabulary', () => {
     })
   })
 
+  // The delimiter is selectable in the UI, defaulting to the bar (ticket 06
+  // follow-up).
+  it('parses and submits bulk rows using a selected non-default delimiter', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => jsonResponse(successEnvelope([fruit])))
+      .mockImplementationOnce(() => jsonResponse(successEnvelope([manzana])))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AddVocabulary />)
+
+    await screen.findByText('Fruit')
+
+    fireEvent.change(screen.getByLabelText('Delimiter'), { target: { value: ',' } })
+    fireEvent.change(screen.getByLabelText('Bulk source language'), { target: { value: 'es' } })
+    fireEvent.change(screen.getByLabelText('Bulk target language'), { target: { value: 'en' } })
+    fireEvent.change(screen.getByLabelText('Paste rows as "source , target , category"'), {
+      target: { value: 'manzana, apple, Fruit' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Import rows' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const body = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))
+    expect(body).toEqual({
+      entries: [
+        {
+          source_language: 'es',
+          source_text: 'manzana',
+          target_language: 'en',
+          target_text: 'apple',
+          category_name: 'Fruit',
+        },
+      ],
+    })
+  })
+
   // An unparseable row is shown before the client attempts to submit
   // (spec.md story 26; ticket 06).
   it('shows a parse error and disables submit for a malformed bulk row', async () => {

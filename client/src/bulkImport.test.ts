@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parsePipeDelimitedRows } from './bulkImport'
+import { parseDelimitedRows } from './bulkImport'
 
-describe('parsePipeDelimitedRows', () => {
-  // The client parses the pasted `source | target | category` convenience
-  // format so the server accepts JSON only (spec.md story 24; ticket 06).
+describe('parseDelimitedRows', () => {
+  // The client parses the pasted `source <delimiter> target <delimiter>
+  // category` convenience format so the server accepts JSON only (spec.md
+  // story 24; ticket 06).
   it('parses multiple rows, ignoring blank lines', () => {
-    const result = parsePipeDelimitedRows('manzana | apple | Fruit\n\nperro | dog | Animals')
+    const result = parseDelimitedRows('manzana | apple | Fruit\n\nperro | dog | Animals', '|')
 
     expect(result).toEqual({
       ok: true,
@@ -17,7 +18,18 @@ describe('parsePipeDelimitedRows', () => {
   })
 
   it('trims surrounding whitespace within a row', () => {
-    const result = parsePipeDelimitedRows('  manzana  |  apple  |  Fruit  ')
+    const result = parseDelimitedRows('  manzana  |  apple  |  Fruit  ', '|')
+
+    expect(result).toEqual({
+      ok: true,
+      value: [{ sourceText: 'manzana', targetText: 'apple', categoryName: 'Fruit' }],
+    })
+  })
+
+  // The delimiter is caller-chosen, defaulting to the bar in the UI, but
+  // any single- or multi-character delimiter works (ticket 06 follow-up).
+  it('parses rows using a caller-chosen delimiter', () => {
+    const result = parseDelimitedRows('manzana, apple, Fruit', ',')
 
     expect(result).toEqual({
       ok: true,
@@ -26,7 +38,7 @@ describe('parsePipeDelimitedRows', () => {
   })
 
   it('rejects a row with the wrong number of fields', () => {
-    const result = parsePipeDelimitedRows('manzana | apple')
+    const result = parseDelimitedRows('manzana | apple', '|')
 
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -35,13 +47,13 @@ describe('parsePipeDelimitedRows', () => {
   })
 
   it('rejects a row with an empty field', () => {
-    const result = parsePipeDelimitedRows('manzana |  | Fruit')
+    const result = parseDelimitedRows('manzana |  | Fruit', '|')
 
     expect(result.ok).toBe(false)
   })
 
   it('rejects empty input', () => {
-    const result = parsePipeDelimitedRows('   ')
+    const result = parseDelimitedRows('   ', '|')
 
     expect(result.ok).toBe(false)
   })
