@@ -6,11 +6,14 @@ use sqlx::SqlitePool;
 use thiserror::Error;
 
 use super::{Category, CategoryId, CategoryName, CategorySort};
+use crate::vocabulary_entries::repository as vocabulary_entries_repository;
 
 #[derive(Debug, Error)]
 pub enum RepositoryError {
     #[error("a category with this name already exists")]
     DuplicateName,
+    #[error("deleting this category would leave a vocabulary entry without any category")]
+    WouldOrphanEntry,
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
@@ -104,18 +107,36 @@ pub async fn rename(
     Ok(row.map(Category::from))
 }
 
-/// Deletes a Category by durable ID. Returns whether a row was removed.
-///
-/// No orphan-membership check exists yet: Vocabulary Entries and Category
-/// Memberships are introduced in ticket 05, at which point deletion must
-/// reject `409` when it would remove the final membership of any entry
-/// (grilled-spec.md sec. 2). Until then no membership can exist, so every
-/// deletion is safe.
+/// Deletes a Category by durable ID. Rejected with [`RepositoryError::WouldOrphanEntry`]
+/// when it would remove the final Category Membership of any Vocabulary
+/// Entry; deletion never cascade-deletes Vocabulary Entries
+/// (grilled-spec.md sec. 2). Returns whether a row was removed.
 pub async fn delete(pool: &SqlitePool, id: CategoryId) -> Result<bool, RepositoryError> {
+    let orphaned = vocabulary_entries_repository::entry_ids_with_only_membership(pool, id)
+        .await
+        .map_err(|error| match error {
+            vocabulary_entries_repository::RepositoryError::Database(source) => {
+                RepositoryError::Database(source)
+            }
+            other => RepositoryError::Database(sqlx::Error::Protocol(other.to_string())),
+        })?;
+    if !orphaned.is_empty() {
+        return Err(RepositoryError::WouldOrphanEntry);
+    }
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM category_memberships WHERE category_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
     let result = sqlx::query("DELETE FROM categories WHERE id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+
+    tx.commit().await?;
 
     Ok(result.rows_affected() > 0)
 }

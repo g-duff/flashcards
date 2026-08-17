@@ -9,6 +9,7 @@ pub mod envelope;
 pub mod health;
 pub mod learners;
 pub mod session;
+pub mod vocabulary_entries;
 
 use axum::Router;
 use axum::http::StatusCode;
@@ -54,6 +55,17 @@ pub fn router(state: AppState) -> Router {
             get(categories::get_category)
                 .patch(categories::rename_category)
                 .delete(categories::delete_category),
+        )
+        .route(
+            "/api/vocabulary-entries",
+            get(vocabulary_entries::list_vocabulary_entries)
+                .post(vocabulary_entries::create_vocabulary_entry),
+        )
+        .route(
+            "/api/vocabulary-entries/{id}",
+            get(vocabulary_entries::get_vocabulary_entry)
+                .patch(vocabulary_entries::update_vocabulary_entry)
+                .delete(vocabulary_entries::delete_vocabulary_entry),
         )
         .route(
             "/api/session/learner",

@@ -10,6 +10,7 @@ import {
   type Learner,
 } from './api/learners'
 import Categories from './Categories'
+import AddVocabulary from './AddVocabulary'
 
 type Screen =
   | { kind: 'loading' }
@@ -176,6 +177,7 @@ const Home = () => {
         {feedback.kind === 'error' && <p role="alert">{feedback.message}</p>}
 
         <Categories />
+        <AddVocabulary />
       </section>
     )
   }

@@ -1,18 +1,74 @@
 .app {
   max-width: 480px;
+  width: 100%;
   margin: 0 auto;
-  padding: 1.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+  padding: 2rem 1.25rem calc(2rem + env(safe-area-inset-bottom));
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .server-status {
+  display: inline-block;
+  align-self: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: var(--border);
   color: var(--text);
 }
 
 .server-status[data-status='online'] {
-  color: #1a7f37;
+  background: var(--green-100);
+  color: var(--green-600);
 }
 
 .server-status[data-status='offline'] {
-  color: #cf222e;
+  background: var(--red-100);
+  color: var(--red-600);
+}
+
+.home,
+.categories,
+.add-vocabulary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  text-align: left;
+}
+
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.categories,
+.add-vocabulary {
+  margin-top: 0;
+}
+
+.categories li,
+.home ul li {
+  background: var(--blue-50);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+}
+
+.categories li {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.categories li input {
+  flex: 1;
+  margin-bottom: 0.4rem;
+}
+
+.categories li button {
+  width: 100%;
 }
