@@ -28,19 +28,23 @@ export function parsePipeDelimitedRows(raw: string): Result<BulkImportRow[], Bul
     return { ok: false, error: [{ line: 0, reason: 'Paste at least one row' }] }
   }
 
-  const errors: BulkImportRowError[] = []
-  const rows: BulkImportRow[] = []
+  const { rows, errors } = lines.reduce<{
+    rows: BulkImportRow[]
+    errors: BulkImportRowError[]
+  }>(
+    (accumulator, line, index) => {
+      const fields = line.split('|').map((field) => field.trim())
+      if (fields.length !== 3 || fields.some((field) => field.length === 0)) {
+        const error = { line: index + 1, reason: 'Expected "source | target | category"' }
+        return { ...accumulator, errors: [...accumulator.errors, error] }
+      }
 
-  lines.forEach((line, index) => {
-    const fields = line.split('|').map((field) => field.trim())
-    if (fields.length !== 3 || fields.some((field) => field.length === 0)) {
-      errors.push({ line: index + 1, reason: 'Expected "source | target | category"' })
-      return
-    }
-
-    const [sourceText, targetText, categoryName] = fields as [string, string, string]
-    rows.push({ sourceText, targetText, categoryName })
-  })
+      const [sourceText, targetText, categoryName] = fields as [string, string, string]
+      const row = { sourceText, targetText, categoryName }
+      return { ...accumulator, rows: [...accumulator.rows, row] }
+    },
+    { rows: [], errors: [] },
+  )
 
   return errors.length > 0 ? { ok: false, error: errors } : { ok: true, value: rows }
 }
