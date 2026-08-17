@@ -15,6 +15,8 @@ type CategoriesScreen =
 
 type Feedback = { kind: 'idle' } | { kind: 'submitting' } | { kind: 'error'; message: string }
 
+type EntryMode = 'single' | 'bulk'
+
 async function loadCategories(): Promise<CategoriesScreen> {
   const result = await listCategories()
   return result.ok
@@ -35,6 +37,7 @@ function bulkErrorMessage(error: ApiError): string {
 
 const AddVocabulary = () => {
   const [categoriesScreen, setCategoriesScreen] = useState<CategoriesScreen>({ kind: 'loading' })
+  const [entryMode, setEntryMode] = useState<EntryMode>('single')
   const [sourceLanguage, setSourceLanguage] = useState('')
   const [sourceText, setSourceText] = useState('')
   const [targetLanguage, setTargetLanguage] = useState('')
@@ -118,10 +121,31 @@ const AddVocabulary = () => {
     <section className="add-vocabulary">
       <h2>Add Vocabulary</h2>
 
+      <div className="entry-mode-toggle" role="tablist" aria-label="Vocabulary entry mode">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={entryMode === 'single'}
+          className={entryMode === 'single' ? 'active' : undefined}
+          onClick={() => setEntryMode('single')}
+        >
+          Single entry
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={entryMode === 'bulk'}
+          className={entryMode === 'bulk' ? 'active' : undefined}
+          onClick={() => setEntryMode('bulk')}
+        >
+          Bulk import
+        </button>
+      </div>
+
       {categoriesScreen.kind === 'loading' && <p>Loading categories…</p>}
       {categoriesScreen.kind === 'error' && <p role="alert">{categoriesScreen.message}</p>}
 
-      {categoriesScreen.kind === 'loaded' && (
+      {entryMode === 'single' && categoriesScreen.kind === 'loaded' && (
         <form onSubmit={handleCreate}>
           <label htmlFor="source-language">Source language</label>
           <input
@@ -172,71 +196,76 @@ const AddVocabulary = () => {
         </form>
       )}
 
-      {feedback.kind === 'error' && <p role="alert">{feedback.message}</p>}
+      {entryMode === 'single' && feedback.kind === 'error' && (
+        <p role="alert">{feedback.message}</p>
+      )}
 
-      <h2>Bulk import</h2>
-      <form onSubmit={handleBulkImport}>
-        <label htmlFor="bulk-source-language">Bulk source language</label>
-        <input
-          id="bulk-source-language"
-          value={bulkSourceLanguage}
-          onChange={(event) => setBulkSourceLanguage(event.target.value)}
-        />
+      {entryMode === 'bulk' && (
+        <form onSubmit={handleBulkImport}>
+          <label htmlFor="bulk-source-language">Bulk source language</label>
+          <input
+            id="bulk-source-language"
+            value={bulkSourceLanguage}
+            onChange={(event) => setBulkSourceLanguage(event.target.value)}
+          />
 
-        <label htmlFor="bulk-target-language">Bulk target language</label>
-        <input
-          id="bulk-target-language"
-          value={bulkTargetLanguage}
-          onChange={(event) => setBulkTargetLanguage(event.target.value)}
-        />
+          <label htmlFor="bulk-target-language">Bulk target language</label>
+          <input
+            id="bulk-target-language"
+            value={bulkTargetLanguage}
+            onChange={(event) => setBulkTargetLanguage(event.target.value)}
+          />
 
-        <label htmlFor="bulk-delimiter">Delimiter</label>
-        <select
-          id="bulk-delimiter"
-          value={bulkDelimiter}
-          onChange={(event) => setBulkDelimiter(event.target.value)}
-        >
-          {BULK_IMPORT_DELIMITER_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-
-        <label htmlFor="bulk-rows">
-          Paste rows as "source {bulkDelimiter} target {bulkDelimiter} category"
-        </label>
-        <textarea
-          id="bulk-rows"
-          value={bulkPasteText}
-          onChange={(event) => setBulkPasteText(event.target.value)}
-        />
-
-        {bulkPasteText.trim().length > 0 && !bulkParseResult.ok && (
-          <ul role="alert">
-            {bulkParseResult.error.map((rowError) => (
-              <li key={rowError.line}>
-                Line {rowError.line}: {rowError.reason}
-              </li>
+          <label htmlFor="bulk-delimiter">Delimiter</label>
+          <select
+            id="bulk-delimiter"
+            value={bulkDelimiter}
+            onChange={(event) => setBulkDelimiter(event.target.value)}
+          >
+            {BULK_IMPORT_DELIMITER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
-          </ul>
-        )}
+          </select>
 
-        <button
-          type="submit"
-          disabled={
-            bulkFeedback.kind === 'submitting' ||
-            !bulkParseResult.ok ||
-            bulkPasteText.trim().length === 0 ||
-            bulkSourceLanguage.trim().length === 0 ||
-            bulkTargetLanguage.trim().length === 0
-          }
-        >
-          Import rows
-        </button>
-      </form>
+          <label htmlFor="bulk-rows">
+            Paste rows as "source {bulkDelimiter} target {bulkDelimiter} category"
+          </label>
+          <textarea
+            id="bulk-rows"
+            value={bulkPasteText}
+            onChange={(event) => setBulkPasteText(event.target.value)}
+          />
 
-      {bulkFeedback.kind === 'error' && <p role="alert">{bulkFeedback.message}</p>}
+          {bulkPasteText.trim().length > 0 && !bulkParseResult.ok && (
+            <ul role="alert">
+              {bulkParseResult.error.map((rowError) => (
+                <li key={rowError.line}>
+                  Line {rowError.line}: {rowError.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="submit"
+            disabled={
+              bulkFeedback.kind === 'submitting' ||
+              !bulkParseResult.ok ||
+              bulkPasteText.trim().length === 0 ||
+              bulkSourceLanguage.trim().length === 0 ||
+              bulkTargetLanguage.trim().length === 0
+            }
+          >
+            Import rows
+          </button>
+        </form>
+      )}
+
+      {entryMode === 'bulk' && bulkFeedback.kind === 'error' && (
+        <p role="alert">{bulkFeedback.message}</p>
+      )}
     </section>
   )
 }

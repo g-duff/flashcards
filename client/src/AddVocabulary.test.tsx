@@ -25,6 +25,10 @@ const fruit = {
   updated_at: '2026-08-12T00:00:00Z',
 }
 
+function switchToBulkImport() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Bulk import' }))
+}
+
 const manzana = {
   id: 10,
   source_language: 'es',
@@ -126,6 +130,7 @@ describe('AddVocabulary', () => {
     render(<AddVocabulary />)
 
     await screen.findByText('Fruit')
+    switchToBulkImport()
 
     fireEvent.change(screen.getByLabelText('Bulk source language'), {
       target: { value: 'es' },
@@ -172,6 +177,7 @@ describe('AddVocabulary', () => {
     render(<AddVocabulary />)
 
     await screen.findByText('Fruit')
+    switchToBulkImport()
 
     fireEvent.change(screen.getByLabelText('Delimiter'), { target: { value: ',' } })
     fireEvent.change(screen.getByLabelText('Bulk source language'), { target: { value: 'es' } })
@@ -205,6 +211,7 @@ describe('AddVocabulary', () => {
     render(<AddVocabulary />)
 
     await screen.findByText('Fruit')
+    switchToBulkImport()
 
     fireEvent.change(screen.getByLabelText('Paste rows as "source | target | category"'), {
       target: { value: 'manzana | apple' },
@@ -234,6 +241,7 @@ describe('AddVocabulary', () => {
     render(<AddVocabulary />)
 
     await screen.findByText('Fruit')
+    switchToBulkImport()
 
     fireEvent.change(screen.getByLabelText('Bulk source language'), { target: { value: 'es' } })
     fireEvent.change(screen.getByLabelText('Bulk target language'), { target: { value: 'en' } })
@@ -268,6 +276,7 @@ describe('AddVocabulary', () => {
     render(<AddVocabulary />)
 
     await screen.findByText('Fruit')
+    switchToBulkImport()
 
     fireEvent.change(screen.getByLabelText('Bulk source language'), { target: { value: 'es' } })
     fireEvent.change(screen.getByLabelText('Bulk target language'), { target: { value: 'en' } })
@@ -281,5 +290,23 @@ describe('AddVocabulary', () => {
         'Bulk import references a category that does not exist. (entries[1].category_name: No category with this name exists)',
       ),
     ).toBeInTheDocument()
+  })
+
+  // Switching between single-entry and bulk-import tabs must not discard
+  // in-progress input in the tab left behind.
+  it('preserves typed single-entry values when switching tabs and back', async () => {
+    const fetchMock = vi.fn().mockImplementationOnce(() => jsonResponse(successEnvelope([fruit])))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AddVocabulary />)
+
+    await screen.findByText('Fruit')
+
+    fireEvent.change(screen.getByLabelText('Source text'), { target: { value: 'manzana' } })
+
+    switchToBulkImport()
+    fireEvent.click(screen.getByRole('tab', { name: 'Single entry' }))
+
+    expect(screen.getByLabelText('Source text')).toHaveValue('manzana')
   })
 })
