@@ -34,6 +34,50 @@ pub struct NewEntry<'a> {
     pub category_ids: &'a [CategoryId],
 }
 
+async fn insert_entry_row(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    source_language: &str,
+    source_text: &str,
+    target_language: &str,
+    target_text: &str,
+    normalized_identity: &str,
+    now: DateTime<Utc>,
+) -> Result<EntryRow, sqlx::Error> {
+    sqlx::query_as::<_, EntryRow>(
+        "INSERT INTO vocabulary_entries
+            (source_language, source_text, target_language, target_text, normalized_identity, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         RETURNING id, source_language, source_text, target_language, target_text, created_at, updated_at",
+    )
+    .bind(source_language)
+    .bind(source_text)
+    .bind(target_language)
+    .bind(target_text)
+    .bind(normalized_identity)
+    .bind(now)
+    .bind(now)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+async fn insert_membership(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    category_id: CategoryId,
+    entry_id: VocabularyEntryId,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO category_memberships (category_id, vocabulary_entry_id, created_at)
+         VALUES (?, ?, ?)",
+    )
+    .bind(category_id)
+    .bind(entry_id)
+    .bind(now)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 /// Inserts a new Vocabulary Entry and its Category Memberships in one
 /// transaction, returning the persisted row (spec.md story 13, 16).
 pub async fn insert(
@@ -43,33 +87,20 @@ pub async fn insert(
 ) -> Result<VocabularyEntry, RepositoryError> {
     let mut tx = pool.begin().await?;
 
-    let row = sqlx::query_as::<_, EntryRow>(
-        "INSERT INTO vocabulary_entries
-            (source_language, source_text, target_language, target_text, normalized_identity, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         RETURNING id, source_language, source_text, target_language, target_text, created_at, updated_at",
+    let row = insert_entry_row(
+        &mut tx,
+        entry.source_language,
+        entry.source_text,
+        entry.target_language,
+        entry.target_text,
+        entry.normalized_identity,
+        now,
     )
-    .bind(entry.source_language)
-    .bind(entry.source_text)
-    .bind(entry.target_language)
-    .bind(entry.target_text)
-    .bind(entry.normalized_identity)
-    .bind(now)
-    .bind(now)
-    .fetch_one(&mut *tx)
     .await
     .map_err(map_write_error)?;
 
     for category_id in entry.category_ids {
-        sqlx::query(
-            "INSERT INTO category_memberships (category_id, vocabulary_entry_id, created_at)
-             VALUES (?, ?, ?)",
-        )
-        .bind(category_id)
-        .bind(row.id)
-        .bind(now)
-        .execute(&mut *tx)
-        .await?;
+        insert_membership(&mut tx, *category_id, row.id, now).await?;
     }
 
     tx.commit().await?;
@@ -84,6 +115,59 @@ pub async fn insert(
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
+}
+
+pub struct NewBulkEntry<'a> {
+    pub source_language: &'a str,
+    pub source_text: &'a str,
+    pub target_language: &'a str,
+    pub target_text: &'a str,
+    pub normalized_identity: &'a str,
+    pub category_id: CategoryId,
+}
+
+/// Inserts multiple Vocabulary Entries, each with its single resolved
+/// Category Membership, in one transaction. A failure on any row (a
+/// duplicate identity, in particular) rolls back the whole batch so no
+/// partial rows persist (spec.md story 26; ticket 06).
+pub async fn insert_bulk(
+    pool: &SqlitePool,
+    entries: &[NewBulkEntry<'_>],
+    now: DateTime<Utc>,
+) -> Result<Vec<VocabularyEntry>, RepositoryError> {
+    let mut tx = pool.begin().await?;
+    let mut inserted = Vec::with_capacity(entries.len());
+
+    for entry in entries {
+        let row = insert_entry_row(
+            &mut tx,
+            entry.source_language,
+            entry.source_text,
+            entry.target_language,
+            entry.target_text,
+            entry.normalized_identity,
+            now,
+        )
+        .await
+        .map_err(map_write_error)?;
+
+        insert_membership(&mut tx, entry.category_id, row.id, now).await?;
+
+        inserted.push(VocabularyEntry {
+            id: row.id,
+            source_language: row.source_language,
+            source_text: row.source_text,
+            target_language: row.target_language,
+            target_text: row.target_text,
+            category_ids: vec![entry.category_id],
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        });
+    }
+
+    tx.commit().await?;
+
+    Ok(inserted)
 }
 
 pub struct ListFilter {

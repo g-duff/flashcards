@@ -1,6 +1,8 @@
 import { useEffect, useState, type SubmitEvent } from 'react'
+import { type ApiError } from './api/client'
 import { listCategories, type Category } from './api/categories'
-import { createVocabularyEntry } from './api/vocabularyEntries'
+import { bulkCreateVocabularyEntries, createVocabularyEntry } from './api/vocabularyEntries'
+import { parseBulkCsv } from './bulkImport'
 
 type CategoriesScreen =
   | { kind: 'loading' }
@@ -16,6 +18,17 @@ async function loadCategories(): Promise<CategoriesScreen> {
     : { kind: 'error', message: result.error.message }
 }
 
+/**
+ * Bulk import spans several rows, so the generic error message alone
+ * cannot tell a Learner which pasted row failed. Fold in the server's
+ * per-row field detail (spec.md story 73; ticket 06) when present.
+ */
+function bulkErrorMessage(error: ApiError): string {
+  const details = error.envelope?.error.details ?? []
+  if (details.length === 0) return error.message
+  return `${error.message} (${details.map((detail) => `${detail.field}: ${detail.reason}`).join('; ')})`
+}
+
 const AddVocabulary = () => {
   const [categoriesScreen, setCategoriesScreen] = useState<CategoriesScreen>({ kind: 'loading' })
   const [sourceLanguage, setSourceLanguage] = useState('')
@@ -24,6 +37,13 @@ const AddVocabulary = () => {
   const [targetText, setTargetText] = useState('')
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([])
   const [feedback, setFeedback] = useState<Feedback>({ kind: 'idle' })
+
+  const [bulkSourceLanguage, setBulkSourceLanguage] = useState('')
+  const [bulkTargetLanguage, setBulkTargetLanguage] = useState('')
+  const [bulkCsvText, setBulkCsvText] = useState('')
+  const [bulkFeedback, setBulkFeedback] = useState<Feedback>({ kind: 'idle' })
+
+  const bulkParseResult = parseBulkCsv(bulkCsvText)
 
   useEffect(() => {
     let cancelled = false
@@ -66,6 +86,27 @@ const AddVocabulary = () => {
     }
 
     setFeedback({ kind: 'error', message: result.error.message })
+  }
+
+  async function handleBulkImport(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!bulkParseResult.ok) return
+
+    setBulkFeedback({ kind: 'submitting' })
+
+    const result = await bulkCreateVocabularyEntries(
+      bulkSourceLanguage,
+      bulkTargetLanguage,
+      bulkParseResult.value,
+    )
+
+    if (result.ok) {
+      setBulkCsvText('')
+      setBulkFeedback({ kind: 'idle' })
+      return
+    }
+
+    setBulkFeedback({ kind: 'error', message: bulkErrorMessage(result.error) })
   }
 
   return (
@@ -127,6 +168,55 @@ const AddVocabulary = () => {
       )}
 
       {feedback.kind === 'error' && <p role="alert">{feedback.message}</p>}
+
+      <h2>Bulk import</h2>
+      <form onSubmit={handleBulkImport}>
+        <label htmlFor="bulk-source-language">Bulk source language</label>
+        <input
+          id="bulk-source-language"
+          value={bulkSourceLanguage}
+          onChange={(event) => setBulkSourceLanguage(event.target.value)}
+        />
+
+        <label htmlFor="bulk-target-language">Bulk target language</label>
+        <input
+          id="bulk-target-language"
+          value={bulkTargetLanguage}
+          onChange={(event) => setBulkTargetLanguage(event.target.value)}
+        />
+
+        <label htmlFor="bulk-csv">Paste rows as "source | target | category"</label>
+        <textarea
+          id="bulk-csv"
+          value={bulkCsvText}
+          onChange={(event) => setBulkCsvText(event.target.value)}
+        />
+
+        {bulkCsvText.trim().length > 0 && !bulkParseResult.ok && (
+          <ul role="alert">
+            {bulkParseResult.error.map((rowError) => (
+              <li key={rowError.line}>
+                Line {rowError.line}: {rowError.reason}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <button
+          type="submit"
+          disabled={
+            bulkFeedback.kind === 'submitting' ||
+            !bulkParseResult.ok ||
+            bulkCsvText.trim().length === 0 ||
+            bulkSourceLanguage.trim().length === 0 ||
+            bulkTargetLanguage.trim().length === 0
+          }
+        >
+          Import rows
+        </button>
+      </form>
+
+      {bulkFeedback.kind === 'error' && <p role="alert">{bulkFeedback.message}</p>}
     </section>
   )
 }

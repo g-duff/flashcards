@@ -1,3 +1,4 @@
+import type { BulkImportRow } from '../bulkImport'
 import type { Result } from '../types/effects'
 import { apiPost, type ApiError } from './client'
 
@@ -29,5 +30,26 @@ export function createVocabularyEntry(
     target_language: entry.targetLanguage,
     target_text: entry.targetText,
     category_ids: entry.categoryIds,
+  })
+}
+
+/**
+ * Atomically creates every parsed bulk row, sharing one source/target
+ * Language Pair across the whole paste; each row's Category is resolved by
+ * normalized name on the server (spec.md story 24, 25, 26; ticket 06).
+ */
+export function bulkCreateVocabularyEntries(
+  sourceLanguage: string,
+  targetLanguage: string,
+  rows: BulkImportRow[],
+): Promise<Result<VocabularyEntry[], ApiError>> {
+  return apiPost<VocabularyEntry[]>('/api/vocabulary-entries/bulk', {
+    entries: rows.map((row) => ({
+      source_language: sourceLanguage,
+      source_text: row.sourceText,
+      target_language: targetLanguage,
+      target_text: row.targetText,
+      category_name: row.categoryName,
+    })),
   })
 }

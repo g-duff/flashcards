@@ -62,6 +62,10 @@ pub fn router(state: AppState) -> Router {
                 .post(vocabulary_entries::create_vocabulary_entry),
         )
         .route(
+            "/api/vocabulary-entries/bulk",
+            axum::routing::post(vocabulary_entries::create_vocabulary_entries_bulk),
+        )
+        .route(
             "/api/vocabulary-entries/{id}",
             get(vocabulary_entries::get_vocabulary_entry)
                 .patch(vocabulary_entries::update_vocabulary_entry)

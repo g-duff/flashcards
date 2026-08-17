@@ -32,7 +32,7 @@ async function apiRequest<T>(path: string, init: RequestInit): Promise<Result<T,
   let body: SuccessEnvelope<T> | ErrorEnvelope
 
   try {
-    console.log(`${API_BASE_URL}${path}`, { ...init, credentials: 'include' });
+    console.log(`${API_BASE_URL}${path}`, { ...init, credentials: 'include' })
     response = await fetch(`${API_BASE_URL}${path}`, { ...init, credentials: 'include' })
     body = (await response.json()) as SuccessEnvelope<T> | ErrorEnvelope
   } catch (cause) {
