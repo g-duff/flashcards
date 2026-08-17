@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseBulkCsv } from './bulkImport'
+import { parsePipeDelimitedRows } from './bulkImport'
 
-describe('parseBulkCsv', () => {
+describe('parsePipeDelimitedRows', () => {
   // The client parses the pasted `source | target | category` convenience
   // format so the server accepts JSON only (spec.md story 24; ticket 06).
   it('parses multiple rows, ignoring blank lines', () => {
-    const result = parseBulkCsv('manzana | apple | Fruit\n\nperro | dog | Animals')
+    const result = parsePipeDelimitedRows('manzana | apple | Fruit\n\nperro | dog | Animals')
 
     expect(result).toEqual({
       ok: true,
@@ -17,7 +17,7 @@ describe('parseBulkCsv', () => {
   })
 
   it('trims surrounding whitespace within a row', () => {
-    const result = parseBulkCsv('  manzana  |  apple  |  Fruit  ')
+    const result = parsePipeDelimitedRows('  manzana  |  apple  |  Fruit  ')
 
     expect(result).toEqual({
       ok: true,
@@ -26,7 +26,7 @@ describe('parseBulkCsv', () => {
   })
 
   it('rejects a row with the wrong number of fields', () => {
-    const result = parseBulkCsv('manzana | apple')
+    const result = parsePipeDelimitedRows('manzana | apple')
 
     expect(result.ok).toBe(false)
     if (!result.ok) {
@@ -35,13 +35,13 @@ describe('parseBulkCsv', () => {
   })
 
   it('rejects a row with an empty field', () => {
-    const result = parseBulkCsv('manzana |  | Fruit')
+    const result = parsePipeDelimitedRows('manzana |  | Fruit')
 
     expect(result.ok).toBe(false)
   })
 
   it('rejects empty input', () => {
-    const result = parseBulkCsv('   ')
+    const result = parsePipeDelimitedRows('   ')
 
     expect(result.ok).toBe(false)
   })

@@ -2,7 +2,7 @@ import { useEffect, useState, type SubmitEvent } from 'react'
 import { type ApiError } from './api/client'
 import { listCategories, type Category } from './api/categories'
 import { bulkCreateVocabularyEntries, createVocabularyEntry } from './api/vocabularyEntries'
-import { parseBulkCsv } from './bulkImport'
+import { parsePipeDelimitedRows } from './bulkImport'
 
 type CategoriesScreen =
   | { kind: 'loading' }
@@ -40,10 +40,10 @@ const AddVocabulary = () => {
 
   const [bulkSourceLanguage, setBulkSourceLanguage] = useState('')
   const [bulkTargetLanguage, setBulkTargetLanguage] = useState('')
-  const [bulkCsvText, setBulkCsvText] = useState('')
+  const [bulkPasteText, setBulkPasteText] = useState('')
   const [bulkFeedback, setBulkFeedback] = useState<Feedback>({ kind: 'idle' })
 
-  const bulkParseResult = parseBulkCsv(bulkCsvText)
+  const bulkParseResult = parsePipeDelimitedRows(bulkPasteText)
 
   useEffect(() => {
     let cancelled = false
@@ -101,7 +101,7 @@ const AddVocabulary = () => {
     )
 
     if (result.ok) {
-      setBulkCsvText('')
+      setBulkPasteText('')
       setBulkFeedback({ kind: 'idle' })
       return
     }
@@ -185,14 +185,14 @@ const AddVocabulary = () => {
           onChange={(event) => setBulkTargetLanguage(event.target.value)}
         />
 
-        <label htmlFor="bulk-csv">Paste rows as "source | target | category"</label>
+        <label htmlFor="bulk-rows">Paste rows as "source | target | category"</label>
         <textarea
-          id="bulk-csv"
-          value={bulkCsvText}
-          onChange={(event) => setBulkCsvText(event.target.value)}
+          id="bulk-rows"
+          value={bulkPasteText}
+          onChange={(event) => setBulkPasteText(event.target.value)}
         />
 
-        {bulkCsvText.trim().length > 0 && !bulkParseResult.ok && (
+        {bulkPasteText.trim().length > 0 && !bulkParseResult.ok && (
           <ul role="alert">
             {bulkParseResult.error.map((rowError) => (
               <li key={rowError.line}>
@@ -207,7 +207,7 @@ const AddVocabulary = () => {
           disabled={
             bulkFeedback.kind === 'submitting' ||
             !bulkParseResult.ok ||
-            bulkCsvText.trim().length === 0 ||
+            bulkPasteText.trim().length === 0 ||
             bulkSourceLanguage.trim().length === 0 ||
             bulkTargetLanguage.trim().length === 0
           }

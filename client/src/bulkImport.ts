@@ -14,10 +14,11 @@ export type BulkImportRowError = {
 
 /**
  * Parses pasted `source | target | category` rows (spec.md story 24, 30;
- * grilled-spec.md sec. 3). Blank lines are ignored. Any malformed row fails
- * the whole parse — the caller cannot submit a partially valid paste.
+ * grilled-spec.md sec. 3). Pipe-delimited, not CSV — no comma splitting or
+ * quote handling. Blank lines are ignored. Any malformed row fails the whole
+ * parse — the caller cannot submit a partially valid paste.
  */
-export function parseBulkCsv(raw: string): Result<BulkImportRow[], BulkImportRowError[]> {
+export function parsePipeDelimitedRows(raw: string): Result<BulkImportRow[], BulkImportRowError[]> {
   const lines = raw
     .split('\n')
     .map((line) => line.trim())
