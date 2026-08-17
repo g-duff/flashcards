@@ -22,6 +22,12 @@ const bea = {
   created_at: '2026-08-12T00:00:00Z',
   updated_at: '2026-08-12T00:00:00Z',
 }
+const animals = {
+  id: 1,
+  name: 'Animals',
+  created_at: '2026-08-12T00:00:00Z',
+  updated_at: '2026-08-12T00:00:00Z',
+}
 
 /**
  * Routes a mocked fetch call by URL substring, falling back to an empty
@@ -217,5 +223,34 @@ describe('Home', () => {
     expect(screen.queryByRole('button', { name: 'Confirm delete' })).not.toBeInTheDocument()
     const writeCall = fetchMock.mock.calls.find((call) => call[1]?.method !== undefined)
     expect(writeCall).toBeUndefined()
+  })
+
+  // Categories and Add Vocabulary each fetch their own category list, so
+  // creating a category must signal Add Vocabulary to refetch rather than
+  // leaving its checkboxes stale until a page reload.
+  it('shows a newly created category in Add Vocabulary without reloading', async () => {
+    let categoryCreated = false
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/session/learner')) return jsonResponse(successEnvelope(alice))
+      if (url.includes('/api/categories') && init?.method === 'POST') {
+        categoryCreated = true
+        return jsonResponse(successEnvelope(animals))
+      }
+      if (url.includes('/api/categories')) {
+        return jsonResponse(successEnvelope(categoryCreated ? [animals] : []))
+      }
+      return jsonResponse(successEnvelope([]))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<Home />)
+
+    await screen.findByText('Alice')
+    expect(screen.queryByLabelText('Animals')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('New category name'), { target: { value: 'Animals' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create category' }))
+
+    expect(await screen.findByLabelText('Animals')).toBeInTheDocument()
   })
 })

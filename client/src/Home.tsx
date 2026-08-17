@@ -30,6 +30,7 @@ const Home = () => {
   const [feedback, setFeedback] = useState<Feedback>({ kind: 'idle' })
   const [renameValue, setRenameValue] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [categoriesVersion, setCategoriesVersion] = useState(0)
 
   function selectScreen(learner: Learner) {
     setScreen({ kind: 'selected', learner })
@@ -176,8 +177,8 @@ const Home = () => {
 
         {feedback.kind === 'error' && <p role="alert">{feedback.message}</p>}
 
-        <Categories />
-        <AddVocabulary />
+        <Categories onChanged={() => setCategoriesVersion((version) => version + 1)} />
+        <AddVocabulary categoriesVersion={categoriesVersion} />
       </section>
     )
   }

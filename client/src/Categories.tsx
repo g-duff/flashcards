@@ -22,7 +22,9 @@ async function loadCategories(sort: CategorySort): Promise<Screen> {
     : { kind: 'error', message: result.error.message }
 }
 
-const Categories = () => {
+type CategoriesProps = { onChanged?: () => void }
+
+const Categories = ({ onChanged }: CategoriesProps) => {
   const [sort, setSort] = useState<CategorySort>('created_at')
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
   const [newName, setNewName] = useState('')
@@ -43,6 +45,7 @@ const Categories = () => {
 
   async function refresh() {
     setScreen(await loadCategories(sort))
+    onChanged?.()
   }
 
   async function handleCreate(event: SubmitEvent<HTMLFormElement>) {

@@ -35,7 +35,9 @@ function bulkErrorMessage(error: ApiError): string {
   return `${error.message} (${details.map((detail) => `${detail.field}: ${detail.reason}`).join('; ')})`
 }
 
-const AddVocabulary = () => {
+type AddVocabularyProps = { categoriesVersion?: number }
+
+const AddVocabulary = ({ categoriesVersion }: AddVocabularyProps) => {
   const [categoriesScreen, setCategoriesScreen] = useState<CategoriesScreen>({ kind: 'loading' })
   const [entryMode, setEntryMode] = useState<EntryMode>('single')
   const [sourceLanguage, setSourceLanguage] = useState('')
@@ -63,7 +65,7 @@ const AddVocabulary = () => {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [categoriesVersion])
 
   function toggleCategory(categoryId: number) {
     setSelectedCategoryIds((current) =>
