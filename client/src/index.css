@@ -130,7 +130,9 @@ select {
   border-radius: var(--radius-sm);
   padding: 0.55rem 0.7rem;
   margin-bottom: 0.6rem;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 input:focus,
@@ -151,7 +153,10 @@ button {
   background: var(--blue-100);
   color: var(--blue-600);
   padding: 0.55rem 1rem;
-  transition: background 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.05s ease,
+    box-shadow 0.15s ease;
 }
 
 button:hover:not(:disabled) {

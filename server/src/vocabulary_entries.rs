@@ -131,6 +131,17 @@ pub fn validate_category_ids(category_ids: &[CategoryId]) -> Result<(), Category
     Ok(())
 }
 
+/// Finds the index of the first normalized identity in `identities` that
+/// duplicates one seen earlier in the same batch. Used to reject an entire
+/// bulk import atomically when two pasted rows collide, rather than relying
+/// solely on the database's unique constraint (spec.md story 26; ticket 06).
+pub fn find_duplicate_identity_index(identities: &[String]) -> Option<usize> {
+    let mut seen = std::collections::HashSet::new();
+    identities
+        .iter()
+        .position(|identity| !seen.insert(identity))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +232,22 @@ mod tests {
     #[test]
     fn accepts_one_or_more_category_ids() {
         assert_eq!(validate_category_ids(&[CategoryId(1)]), Ok(()));
+    }
+
+    // A bulk import row that duplicates an earlier row's identity in the
+    // same batch is detected, even before touching the database (spec.md
+    // story 26; ticket 06).
+    #[test]
+    fn finds_duplicate_identity_within_batch() {
+        let identities = vec!["a".to_string(), "b".to_string(), "a".to_string()];
+
+        assert_eq!(find_duplicate_identity_index(&identities), Some(2));
+    }
+
+    #[test]
+    fn finds_no_duplicate_when_all_identities_are_distinct() {
+        let identities = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+
+        assert_eq!(find_duplicate_identity_index(&identities), None);
     }
 }

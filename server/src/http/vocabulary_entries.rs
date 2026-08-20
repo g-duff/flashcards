@@ -9,16 +9,16 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use serde::Deserialize;
 
-use crate::categories::CategoryId;
+use crate::categories::{self, CategoryId};
 use crate::http::envelope::{self, ErrorDetail, ErrorResponse, SuccessEnvelope};
 use crate::http::internal_error;
 use crate::state::AppState;
 use crate::vocabulary_entries::repository::{
-    self, EntryEdit, ListFilter, NewEntry, RepositoryError,
+    self, EntryEdit, ListFilter, NewBulkEntry, NewEntry, RepositoryError,
 };
 use crate::vocabulary_entries::{
-    self, VocabularyEntry, VocabularyEntryId, validate_category_ids, validate_language,
-    validate_text,
+    self, EntryText, LanguageCode, VocabularyEntry, VocabularyEntryId, validate_category_ids,
+    validate_language, validate_text,
 };
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +78,120 @@ pub async fn create_vocabulary_entry(
     tracing::info!(vocabulary_entry_id = %entry.id, "vocabulary entry created");
 
     Ok((StatusCode::CREATED, envelope::success(entry, Utc::now())))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkVocabularyEntryRow {
+    pub source_language: String,
+    pub source_text: String,
+    pub target_language: String,
+    pub target_text: String,
+    pub category_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateVocabularyEntriesBulkRequest {
+    pub entries: Vec<BulkVocabularyEntryRow>,
+}
+
+struct ValidatedBulkRow {
+    source_language: LanguageCode,
+    source_text: EntryText,
+    target_language: LanguageCode,
+    target_text: EntryText,
+    category_normalized_name: String,
+}
+
+/// Atomically creates multiple Vocabulary Entries from the client's parsed
+/// `source | target | category` rows, resolving each row's Category by
+/// normalized name. Any invalid, unknown-Category, or duplicate row —
+/// including a duplicate within the same batch — rejects the whole import
+/// with no partial writes (spec.md story 24, 25, 26; ticket 06).
+pub async fn create_vocabulary_entries_bulk(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateVocabularyEntriesBulkRequest>,
+) -> Result<(StatusCode, SuccessEnvelope<Vec<VocabularyEntry>>), ErrorResponse> {
+    let supported_languages = &state.config().supported_languages;
+
+    if payload.entries.is_empty() {
+        return Err(bulk_validation_error(0, "entries", "At least one row is required"));
+    }
+
+    let mut validated_rows = Vec::with_capacity(payload.entries.len());
+    for (index, row) in payload.entries.iter().enumerate() {
+        let source_language = validate_language(&row.source_language, supported_languages)
+            .map_err(|_| {
+                bulk_validation_error(index, "source_language", "Unsupported or empty language code")
+            })?;
+        let target_language = validate_language(&row.target_language, supported_languages)
+            .map_err(|_| {
+                bulk_validation_error(index, "target_language", "Unsupported or empty language code")
+            })?;
+        let source_text = validate_text(&row.source_text)
+            .map_err(|_| bulk_validation_error(index, "source_text", "Cannot be empty"))?;
+        let target_text = validate_text(&row.target_text)
+            .map_err(|_| bulk_validation_error(index, "target_text", "Cannot be empty"))?;
+        let category_name = categories::validate_name(&row.category_name)
+            .map_err(|_| bulk_validation_error(index, "category_name", "Cannot be empty"))?;
+
+        validated_rows.push(ValidatedBulkRow {
+            source_language,
+            source_text,
+            target_language,
+            target_text,
+            category_normalized_name: category_name.normalized,
+        });
+    }
+
+    let mut new_entries = Vec::with_capacity(validated_rows.len());
+    let mut identities = Vec::with_capacity(validated_rows.len());
+    for (index, row) in validated_rows.iter().enumerate() {
+        let category = categories::repository::find_by_normalized_name(
+            state.db(),
+            &row.category_normalized_name,
+        )
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| unknown_category_error(index))?;
+
+        let normalized_identity = vocabulary_entries::normalized_identity(
+            &row.source_language,
+            &row.source_text,
+            &row.target_language,
+            &row.target_text,
+        );
+
+        identities.push(normalized_identity);
+        new_entries.push((row, category.id));
+    }
+
+    if let Some(duplicate_index) = vocabulary_entries::find_duplicate_identity_index(&identities) {
+        return Err(bulk_conflict_error(Some(duplicate_index)));
+    }
+
+    let bulk_entries: Vec<NewBulkEntry> = new_entries
+        .iter()
+        .zip(identities.iter())
+        .map(|((row, category_id), normalized_identity)| NewBulkEntry {
+            source_language: &row.source_language.normalized,
+            source_text: &row.source_text.display,
+            target_language: &row.target_language.normalized,
+            target_text: &row.target_text.display,
+            normalized_identity,
+            category_id: *category_id,
+        })
+        .collect();
+
+    let entries = repository::insert_bulk(state.db(), &bulk_entries, Utc::now())
+        .await
+        .map_err(|error| match error {
+            RepositoryError::DuplicateIdentity => bulk_conflict_error(None),
+            other => internal_error(other),
+        })?;
+
+    tracing::info!(count = entries.len(), "vocabulary entries bulk created");
+
+    Ok((StatusCode::CREATED, envelope::success(entries, Utc::now())))
 }
 
 #[derive(Debug, Deserialize)]
@@ -228,6 +342,55 @@ fn validation_error(field: &str, reason: &str) -> ErrorResponse {
             vec![ErrorDetail {
                 field: field.to_string(),
                 reason: reason.to_string(),
+            }],
+            Utc::now(),
+        ),
+    }
+}
+
+fn bulk_validation_error(index: usize, field: &str, reason: &str) -> ErrorResponse {
+    ErrorResponse {
+        status_code: StatusCode::BAD_REQUEST,
+        envelope: envelope::error(
+            "VALIDATION_ERROR",
+            "Invalid vocabulary entry in bulk import.",
+            vec![ErrorDetail {
+                field: format!("entries[{index}].{field}"),
+                reason: reason.to_string(),
+            }],
+            Utc::now(),
+        ),
+    }
+}
+
+fn unknown_category_error(index: usize) -> ErrorResponse {
+    ErrorResponse {
+        status_code: StatusCode::BAD_REQUEST,
+        envelope: envelope::error(
+            "UNKNOWN_CATEGORY",
+            "Bulk import references a category that does not exist.",
+            vec![ErrorDetail {
+                field: format!("entries[{index}].category_name"),
+                reason: "No category with this name exists".to_string(),
+            }],
+            Utc::now(),
+        ),
+    }
+}
+
+fn bulk_conflict_error(index: Option<usize>) -> ErrorResponse {
+    let field = match index {
+        Some(index) => format!("entries[{index}].target_text"),
+        None => "target_text".to_string(),
+    };
+    ErrorResponse {
+        status_code: StatusCode::CONFLICT,
+        envelope: envelope::error(
+            "VOCABULARY_ENTRY_CONFLICT",
+            "A vocabulary entry with this language-and-text pair already exists.",
+            vec![ErrorDetail {
+                field,
+                reason: "Already in use".to_string(),
             }],
             Utc::now(),
         ),

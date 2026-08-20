@@ -1,33 +1,27 @@
 import { render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { getHealth } from './api/health'
+import { getCurrentLearner, listLearners } from './api/learners'
+import { apiError } from './testUtils/envelopes'
 
-function mockFetchOnce(body: unknown) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue({
-      json: () => Promise.resolve(body),
-    }),
-  )
-}
+vi.mock('./api/health')
+vi.mock('./api/learners')
 
 describe('App', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
+    vi.resetAllMocks()
+    // App always renders Home, which resolves the current learner on mount;
+    // default to no learner so these health-check tests don't also need to
+    // stub the Categories/Add Vocabulary subtree.
+    vi.mocked(getCurrentLearner).mockResolvedValue({ ok: true, value: undefined })
+    vi.mocked(listLearners).mockResolvedValue({ ok: true, value: [] })
   })
 
   // As a developer, calling the server health endpoint proves the client
   // scaffold can talk to the server (01-project-scaffolding.md).
   it('shows the server status once the health check succeeds', async () => {
-    mockFetchOnce({
-      status: 'success',
-      data: { status: 'ok' },
-      meta: { timestamp: '2026-08-12T00:00:00Z' },
-    })
+    vi.mocked(getHealth).mockResolvedValue({ ok: true, value: { status: 'ok' } })
 
     render(<App />)
 
@@ -35,7 +29,7 @@ describe('App', () => {
   })
 
   it('reports the server as unreachable when the health check fails', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')))
+    vi.mocked(getHealth).mockResolvedValue({ ok: false, error: apiError('network error') })
 
     render(<App />)
 

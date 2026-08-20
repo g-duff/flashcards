@@ -41,7 +41,8 @@
   text-align: left;
 }
 
-.home {
+.home,
+.add-vocabulary {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -50,6 +51,41 @@
 .categories,
 .add-vocabulary {
   margin-top: 0;
+}
+
+.entry-mode-toggle {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--blue-50);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  align-self: flex-start;
+}
+
+.entry-mode-toggle button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 0.45rem 0.9rem;
+  white-space: nowrap;
+  border-radius: calc(var(--radius-sm) - 3px);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.entry-mode-toggle button:hover:not(:disabled) {
+  background: var(--blue-100);
+  box-shadow: none;
+}
+
+.entry-mode-toggle button.active {
+  background: var(--surface);
+  color: var(--blue-600);
+  box-shadow: var(--shadow);
 }
 
 .categories li,

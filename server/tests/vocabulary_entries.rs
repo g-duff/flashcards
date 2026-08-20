@@ -415,6 +415,226 @@ async fn deleting_a_category_that_would_orphan_an_entry_conflicts() {
     assert_eq!(body["error"]["code"], "CATEGORY_WOULD_ORPHAN_ENTRY");
 }
 
+// `POST /api/vocabulary-entries/bulk` atomically creates every row,
+// resolving each row's Category by normalized name (spec.md story 24, 25;
+// ticket 06).
+#[tokio::test]
+async fn bulk_import_creates_every_row_atomically() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+    let fruit_id = create_category(&base_url, &client, "Fruit").await;
+    create_category(&base_url, &client, "Animals").await;
+
+    let response = client
+        .post(format!("{base_url}/api/vocabulary-entries/bulk"))
+        .json(&json!({
+            "entries": [
+                { "source_language": "ES", "source_text": "manzana", "target_language": "EN", "target_text": "apple", "category_name": "fruit" },
+                { "source_language": "es", "source_text": "perro", "target_language": "en", "target_text": "dog", "category_name": "  Animals  " },
+            ]
+        }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 201);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    let entries = body["data"].as_array().expect("expected an array");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["source_text"], "manzana");
+    assert_eq!(entries[0]["category_ids"], json!([fruit_id]));
+    assert_eq!(entries[1]["source_text"], "perro");
+
+    let list_response = client
+        .get(format!("{base_url}/api/vocabulary-entries"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    assert_eq!(list_body["data"].as_array().unwrap().len(), 2);
+}
+
+// A row naming an unknown Category rejects the entire import, and no row
+// from the batch persists (spec.md story 25, 26; ticket 06).
+#[tokio::test]
+async fn bulk_import_with_unknown_category_rejects_the_whole_batch() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+    create_category(&base_url, &client, "Fruit").await;
+
+    let response = client
+        .post(format!("{base_url}/api/vocabulary-entries/bulk"))
+        .json(&json!({
+            "entries": [
+                { "source_language": "es", "source_text": "manzana", "target_language": "en", "target_text": "apple", "category_name": "Fruit" },
+                { "source_language": "es", "source_text": "perro", "target_language": "en", "target_text": "dog", "category_name": "Nonexistent" },
+            ]
+        }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "UNKNOWN_CATEGORY");
+    assert_eq!(body["error"]["details"][0]["field"], "entries[1].category_name");
+
+    let list_response = client
+        .get(format!("{base_url}/api/vocabulary-entries"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    assert_eq!(list_body["data"].as_array().unwrap().len(), 0);
+}
+
+// An invalid row (empty text) rejects the whole import, with no partial
+// writes (spec.md story 26; ticket 06).
+#[tokio::test]
+async fn bulk_import_with_invalid_row_rejects_the_whole_batch() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+    create_category(&base_url, &client, "Fruit").await;
+
+    let response = client
+        .post(format!("{base_url}/api/vocabulary-entries/bulk"))
+        .json(&json!({
+            "entries": [
+                { "source_language": "es", "source_text": "manzana", "target_language": "en", "target_text": "apple", "category_name": "Fruit" },
+                { "source_language": "es", "source_text": "   ", "target_language": "en", "target_text": "dog", "category_name": "Fruit" },
+            ]
+        }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(body["error"]["details"][0]["field"], "entries[1].source_text");
+
+    let list_response = client
+        .get(format!("{base_url}/api/vocabulary-entries"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    assert_eq!(list_body["data"].as_array().unwrap().len(), 0);
+}
+
+// A row with an unsupported language code rejects the whole import, with no
+// partial writes (spec.md story 20, 26; ticket 06).
+#[tokio::test]
+async fn bulk_import_with_unsupported_language_rejects_the_whole_batch() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+    create_category(&base_url, &client, "Fruit").await;
+
+    let response = client
+        .post(format!("{base_url}/api/vocabulary-entries/bulk"))
+        .json(&json!({
+            "entries": [
+                { "source_language": "es", "source_text": "manzana", "target_language": "en", "target_text": "apple", "category_name": "Fruit" },
+                { "source_language": "fr", "source_text": "chien", "target_language": "en", "target_text": "dog", "category_name": "Fruit" },
+            ]
+        }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 400);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(body["error"]["details"][0]["field"], "entries[1].source_language");
+
+    let list_response = client
+        .get(format!("{base_url}/api/vocabulary-entries"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    assert_eq!(list_body["data"].as_array().unwrap().len(), 0);
+}
+
+// A duplicate normalized identity within the same batch rejects the whole
+// import (spec.md story 26; ticket 06).
+#[tokio::test]
+async fn bulk_import_with_in_batch_duplicate_rejects_the_whole_batch() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+    create_category(&base_url, &client, "Fruit").await;
+
+    let response = client
+        .post(format!("{base_url}/api/vocabulary-entries/bulk"))
+        .json(&json!({
+            "entries": [
+                { "source_language": "es", "source_text": "manzana", "target_language": "en", "target_text": "apple", "category_name": "Fruit" },
+                { "source_language": "es", "source_text": "  manzana  ", "target_language": "en", "target_text": "apple", "category_name": "Fruit" },
+            ]
+        }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 409);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "VOCABULARY_ENTRY_CONFLICT");
+
+    let list_response = client
+        .get(format!("{base_url}/api/vocabulary-entries"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    assert_eq!(list_body["data"].as_array().unwrap().len(), 0);
+}
+
+// A row duplicating an identity that already exists in the database rejects
+// the whole batch, with no partial writes (spec.md story 15, 26; ticket 06).
+#[tokio::test]
+async fn bulk_import_with_duplicate_against_existing_entry_rejects_the_whole_batch() {
+    let (base_url, _db_guard) = spawn_app().await;
+    let client = reqwest::Client::new();
+    let category_id = create_category(&base_url, &client, "Fruit").await;
+
+    client
+        .post(format!("{base_url}/api/vocabulary-entries"))
+        .json(&json!({
+            "source_language": "es", "source_text": "manzana",
+            "target_language": "en", "target_text": "apple",
+            "category_ids": [category_id],
+        }))
+        .send()
+        .await
+        .expect("request failed");
+
+    let response = client
+        .post(format!("{base_url}/api/vocabulary-entries/bulk"))
+        .json(&json!({
+            "entries": [
+                { "source_language": "es", "source_text": "perro", "target_language": "en", "target_text": "dog", "category_name": "Fruit" },
+                { "source_language": "es", "source_text": "manzana", "target_language": "en", "target_text": "apple", "category_name": "Fruit" },
+            ]
+        }))
+        .send()
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), 409);
+    let body: serde_json::Value = response.json().await.expect("invalid json body");
+    assert_eq!(body["error"]["code"], "VOCABULARY_ENTRY_CONFLICT");
+
+    let list_response = client
+        .get(format!("{base_url}/api/vocabulary-entries"))
+        .send()
+        .await
+        .expect("request failed");
+    let list_body: serde_json::Value = list_response.json().await.expect("invalid json body");
+    // Only the pre-existing "manzana" entry remains; "perro" from the
+    // rejected batch was not partially written.
+    assert_eq!(list_body["data"].as_array().unwrap().len(), 1);
+}
+
 // Deleting a Category is still safe when the dependent entry belongs to
 // another Category too (spec.md story 11; ticket 05).
 #[tokio::test]

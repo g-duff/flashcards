@@ -16,15 +16,6 @@ pub enum RepositoryError {
     Database(#[from] sqlx::Error),
 }
 
-fn map_write_error(source: sqlx::Error) -> RepositoryError {
-    match &source {
-        sqlx::Error::Database(db_error) if db_error.is_unique_violation() => {
-            RepositoryError::DuplicateIdentity
-        }
-        _ => RepositoryError::Database(source),
-    }
-}
-
 pub struct NewEntry<'a> {
     pub source_language: &'a str,
     pub source_text: &'a str,
@@ -43,47 +34,69 @@ pub async fn insert(
 ) -> Result<VocabularyEntry, RepositoryError> {
     let mut tx = pool.begin().await?;
 
-    let row = sqlx::query_as::<_, EntryRow>(
-        "INSERT INTO vocabulary_entries
-            (source_language, source_text, target_language, target_text, normalized_identity, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         RETURNING id, source_language, source_text, target_language, target_text, created_at, updated_at",
+    let row = insert_entry_row(
+        &mut tx,
+        entry.source_language,
+        entry.source_text,
+        entry.target_language,
+        entry.target_text,
+        entry.normalized_identity,
+        now,
     )
-    .bind(entry.source_language)
-    .bind(entry.source_text)
-    .bind(entry.target_language)
-    .bind(entry.target_text)
-    .bind(entry.normalized_identity)
-    .bind(now)
-    .bind(now)
-    .fetch_one(&mut *tx)
     .await
     .map_err(map_write_error)?;
 
     for category_id in entry.category_ids {
-        sqlx::query(
-            "INSERT INTO category_memberships (category_id, vocabulary_entry_id, created_at)
-             VALUES (?, ?, ?)",
-        )
-        .bind(category_id)
-        .bind(row.id)
-        .bind(now)
-        .execute(&mut *tx)
-        .await?;
+        insert_membership(&mut tx, *category_id, row.id, now).await?;
     }
 
     tx.commit().await?;
 
-    Ok(VocabularyEntry {
-        id: row.id,
-        source_language: row.source_language,
-        source_text: row.source_text,
-        target_language: row.target_language,
-        target_text: row.target_text,
-        category_ids: entry.category_ids.to_vec(),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    })
+    Ok(row.into_entry(entry.category_ids.to_vec()))
+}
+
+pub struct NewBulkEntry<'a> {
+    pub source_language: &'a str,
+    pub source_text: &'a str,
+    pub target_language: &'a str,
+    pub target_text: &'a str,
+    pub normalized_identity: &'a str,
+    pub category_id: CategoryId,
+}
+
+/// Inserts multiple Vocabulary Entries, each with its single resolved
+/// Category Membership, in one transaction. A failure on any row (a
+/// duplicate identity, in particular) rolls back the whole batch so no
+/// partial rows persist (spec.md story 26; ticket 06).
+pub async fn insert_bulk(
+    pool: &SqlitePool,
+    entries: &[NewBulkEntry<'_>],
+    now: DateTime<Utc>,
+) -> Result<Vec<VocabularyEntry>, RepositoryError> {
+    let mut tx = pool.begin().await?;
+    let mut inserted = Vec::with_capacity(entries.len());
+
+    for entry in entries {
+        let row = insert_entry_row(
+            &mut tx,
+            entry.source_language,
+            entry.source_text,
+            entry.target_language,
+            entry.target_text,
+            entry.normalized_identity,
+            now,
+        )
+        .await
+        .map_err(map_write_error)?;
+
+        insert_membership(&mut tx, entry.category_id, row.id, now).await?;
+
+        inserted.push(row.into_entry(vec![entry.category_id]));
+    }
+
+    tx.commit().await?;
+
+    Ok(inserted)
 }
 
 pub struct ListFilter {
@@ -119,16 +132,7 @@ pub async fn list(
     let mut entries = Vec::with_capacity(rows.len());
     for row in rows {
         let category_ids = category_ids_for(pool, row.id).await?;
-        entries.push(VocabularyEntry {
-            id: row.id,
-            source_language: row.source_language,
-            source_text: row.source_text,
-            target_language: row.target_language,
-            target_text: row.target_text,
-            category_ids,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-        });
+        entries.push(row.into_entry(category_ids));
     }
 
     Ok(entries)
@@ -153,30 +157,7 @@ pub async fn find_by_id(
 
     let category_ids = category_ids_for(pool, row.id).await?;
 
-    Ok(Some(VocabularyEntry {
-        id: row.id,
-        source_language: row.source_language,
-        source_text: row.source_text,
-        target_language: row.target_language,
-        target_text: row.target_text,
-        category_ids,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    }))
-}
-
-async fn category_ids_for(
-    pool: &SqlitePool,
-    entry_id: VocabularyEntryId,
-) -> Result<Vec<CategoryId>, RepositoryError> {
-    let ids = sqlx::query_scalar::<_, CategoryId>(
-        "SELECT category_id FROM category_memberships WHERE vocabulary_entry_id = ? ORDER BY category_id ASC",
-    )
-    .bind(entry_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(ids)
+    Ok(Some(row.into_entry(category_ids)))
 }
 
 pub struct EntryEdit<'a> {
@@ -223,29 +204,12 @@ pub async fn update(
         .await?;
 
     for category_id in edit.category_ids {
-        sqlx::query(
-            "INSERT INTO category_memberships (category_id, vocabulary_entry_id, created_at)
-             VALUES (?, ?, ?)",
-        )
-        .bind(category_id)
-        .bind(id)
-        .bind(now)
-        .execute(&mut *tx)
-        .await?;
+        insert_membership(&mut tx, *category_id, id, now).await?;
     }
 
     tx.commit().await?;
 
-    Ok(Some(VocabularyEntry {
-        id: row.id,
-        source_language: row.source_language,
-        source_text: row.source_text,
-        target_language: row.target_language,
-        target_text: row.target_text,
-        category_ids: edit.category_ids.to_vec(),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    }))
+    Ok(Some(row.into_entry(edit.category_ids.to_vec())))
 }
 
 /// Deletes a Vocabulary Entry and its Category Memberships in one
@@ -290,6 +254,75 @@ pub async fn entry_ids_with_only_membership(
     Ok(ids)
 }
 
+// --- Private helpers ---
+
+fn map_write_error(source: sqlx::Error) -> RepositoryError {
+    match &source {
+        sqlx::Error::Database(db_error) if db_error.is_unique_violation() => {
+            RepositoryError::DuplicateIdentity
+        }
+        _ => RepositoryError::Database(source),
+    }
+}
+
+async fn insert_entry_row(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    source_language: &str,
+    source_text: &str,
+    target_language: &str,
+    target_text: &str,
+    normalized_identity: &str,
+    now: DateTime<Utc>,
+) -> Result<EntryRow, sqlx::Error> {
+    sqlx::query_as::<_, EntryRow>(
+        "INSERT INTO vocabulary_entries
+            (source_language, source_text, target_language, target_text, normalized_identity, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         RETURNING id, source_language, source_text, target_language, target_text, created_at, updated_at",
+    )
+    .bind(source_language)
+    .bind(source_text)
+    .bind(target_language)
+    .bind(target_text)
+    .bind(normalized_identity)
+    .bind(now)
+    .bind(now)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+async fn insert_membership(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    category_id: CategoryId,
+    entry_id: VocabularyEntryId,
+    now: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO category_memberships (category_id, vocabulary_entry_id, created_at)
+         VALUES (?, ?, ?)",
+    )
+    .bind(category_id)
+    .bind(entry_id)
+    .bind(now)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn category_ids_for(
+    pool: &SqlitePool,
+    entry_id: VocabularyEntryId,
+) -> Result<Vec<CategoryId>, RepositoryError> {
+    let ids = sqlx::query_scalar::<_, CategoryId>(
+        "SELECT category_id FROM category_memberships WHERE vocabulary_entry_id = ? ORDER BY category_id ASC",
+    )
+    .bind(entry_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(ids)
+}
+
 #[derive(Debug, sqlx::FromRow)]
 struct EntryRow {
     id: VocabularyEntryId,
@@ -299,4 +332,23 @@ struct EntryRow {
     target_text: String,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+impl EntryRow {
+    /// Pairs this row with its Category Memberships to build the domain
+    /// type. Every read/write path above fetches or is given
+    /// `category_ids` differently, so the mapping itself is the one thing
+    /// worth sharing.
+    fn into_entry(self, category_ids: Vec<CategoryId>) -> VocabularyEntry {
+        VocabularyEntry {
+            id: self.id,
+            source_language: self.source_language,
+            source_text: self.source_text,
+            target_language: self.target_language,
+            target_text: self.target_text,
+            category_ids,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
 }

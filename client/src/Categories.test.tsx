@@ -1,22 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Categories from './Categories'
+import { createCategory, deleteCategory, listCategories } from './api/categories'
+import { apiError } from './testUtils/envelopes'
 
-function jsonResponse(body: unknown) {
-  return Promise.resolve({ json: () => Promise.resolve(body) } as Response)
-}
-
-function successEnvelope(data: unknown) {
-  return { status: 'success', data, meta: { timestamp: '2026-08-12T00:00:00Z' } }
-}
-
-function errorEnvelope(code: string, message: string) {
-  return {
-    status: 'error',
-    error: { code, message, details: [] },
-    meta: { timestamp: '2026-08-12T00:00:00Z' },
-  }
-}
+vi.mock('./api/categories')
 
 const animals = {
   id: 1,
@@ -27,20 +15,13 @@ const animals = {
 
 describe('Categories', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
+    vi.resetAllMocks()
   })
 
   // Categories screen: list Categories sorted per the default order
   // (spec.md story 9; ticket 04).
   it('lists categories returned by the server', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockImplementation(() => jsonResponse(successEnvelope([animals]))),
-    )
+    vi.mocked(listCategories).mockResolvedValue({ ok: true, value: [animals] })
 
     render(<Categories />)
 
@@ -54,13 +35,11 @@ describe('Categories', () => {
   // representative conflict response rather than a code the server emits
   // today.
   it('shows the server error message when a deletion request fails', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(() => jsonResponse(successEnvelope([animals])))
-      .mockImplementationOnce(() =>
-        jsonResponse(errorEnvelope('CONFLICT', 'That category could not be deleted.')),
-      )
-    vi.stubGlobal('fetch', fetchMock)
+    vi.mocked(listCategories).mockResolvedValue({ ok: true, value: [animals] })
+    vi.mocked(deleteCategory).mockResolvedValue({
+      ok: false,
+      error: apiError('That category could not be deleted.'),
+    })
 
     render(<Categories />)
 
@@ -79,16 +58,15 @@ describe('Categories', () => {
       created_at: '2026-08-12T00:00:00Z',
       updated_at: '2026-08-12T00:00:00Z',
     }
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce(() => jsonResponse(successEnvelope([])))
-      .mockImplementationOnce(() => jsonResponse(successEnvelope(created)))
-      .mockImplementationOnce(() => jsonResponse(successEnvelope([created])))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.mocked(listCategories).mockResolvedValueOnce({ ok: true, value: [] })
+    vi.mocked(createCategory).mockResolvedValue({ ok: true, value: created })
 
     render(<Categories />)
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(listCategories).toHaveBeenCalledTimes(1))
+
+    // The refresh triggered by a successful create refetches the list.
+    vi.mocked(listCategories).mockResolvedValue({ ok: true, value: [created] })
 
     fireEvent.change(screen.getByLabelText('New category name'), {
       target: { value: 'Fruits' },
@@ -96,5 +74,6 @@ describe('Categories', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create category' }))
 
     expect(await screen.findByDisplayValue('Fruits')).toBeInTheDocument()
+    expect(createCategory).toHaveBeenCalledWith('Fruits')
   })
 })

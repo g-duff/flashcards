@@ -83,6 +83,23 @@ pub async fn find_by_id(
     Ok(row.map(Category::from))
 }
 
+/// Finds a Category by its normalized name, if one exists. Used to resolve
+/// bulk-import rows to an existing shared Category (spec.md story 25;
+/// ticket 06).
+pub async fn find_by_normalized_name(
+    pool: &SqlitePool,
+    normalized_name: &str,
+) -> Result<Option<Category>, RepositoryError> {
+    let row = sqlx::query_as::<_, CategoryRow>(
+        "SELECT id, name, created_at, updated_at FROM categories WHERE normalized_name = ?",
+    )
+    .bind(normalized_name)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(Category::from))
+}
+
 /// Renames a Category in place, preserving its durable ID. Returns `None`
 /// if no Category with that ID exists.
 pub async fn rename(
