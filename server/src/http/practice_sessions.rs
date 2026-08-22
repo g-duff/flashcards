@@ -90,6 +90,7 @@ pub async fn create_practice_session(
                 min_interval_before_retest_days: config
                     .algorithm_defaults
                     .min_interval_before_retest_days,
+                incorrect_distractor_count: config.incorrect_distractor_count as usize,
                 now,
             },
             &mut rng,

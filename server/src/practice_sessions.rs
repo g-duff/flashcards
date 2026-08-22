@@ -183,8 +183,6 @@ pub struct PracticeSession {
     pub questions: Vec<PracticeQuestion>,
 }
 
-const INCORRECT_DISTRACTOR_COUNT: usize = 4;
-
 /// Everything session generation needs, gathered by the imperative shell
 /// so the selection/eligibility/shuffling logic below stays pure (server/
 /// CODING_STANDARDS.md sec. 6).
@@ -201,6 +199,9 @@ pub struct GenerateSessionInput<'a> {
     pub all_entries: &'a [VocabularyEntry],
     pub last_correct_at: &'a HashMap<(VocabularyEntryId, TranslationDirection), DateTime<Utc>>,
     pub min_interval_before_retest_days: f64,
+    /// The number of distinct incorrect distractors each Question must
+    /// have (server-configured; `config.yaml`'s `incorrect_distractor_count`).
+    pub incorrect_distractor_count: usize,
     pub now: DateTime<Utc>,
 }
 
@@ -238,6 +239,7 @@ pub fn generate_session_questions(
                 input.direction,
                 input.category_id,
                 input.all_entries,
+                input.incorrect_distractor_count,
             )?;
             Some(build_question(entry, input.direction, distractors, rng))
         })
@@ -265,17 +267,19 @@ fn is_in_cooldown(
     now - last_correct_at < min_interval
 }
 
-/// Finds up to four distinct, distractor texts in `entry`'s answer
-/// language, sourced from other Vocabulary Entries sharing its Language
-/// Pair. The selected Category is preferred; other Categories in the same
-/// Language Pair fill any remaining slots (grilled-spec.md sec. 4). Returns
-/// `None` when fewer than four distinct incorrect options can be found,
+/// Finds up to `incorrect_distractor_count` distinct distractor texts in
+/// `entry`'s answer language, sourced from other Vocabulary Entries
+/// sharing its Language Pair. The selected Category is preferred; other
+/// Categories in the same Language Pair fill any remaining slots
+/// (grilled-spec.md sec. 4). Returns `None` when fewer than
+/// `incorrect_distractor_count` distinct incorrect options can be found,
 /// meaning `entry` is not Eligible.
 fn find_distractor_texts(
     entry: &VocabularyEntry,
     direction: TranslationDirection,
     selected_category_id: CategoryId,
     all_entries: &[VocabularyEntry],
+    incorrect_distractor_count: usize,
 ) -> Option<Vec<String>> {
     let answer_language = direction.answer_language(entry);
     let correct_text = direction.answer_text(entry);
@@ -302,9 +306,9 @@ fn find_distractor_texts(
         }
     }
 
-    let mut distinct = Vec::with_capacity(INCORRECT_DISTRACTOR_COUNT);
+    let mut distinct = Vec::with_capacity(incorrect_distractor_count);
     for text in same_category.into_iter().chain(other_category) {
-        if distinct.len() == INCORRECT_DISTRACTOR_COUNT {
+        if distinct.len() == incorrect_distractor_count {
             break;
         }
         if !distinct.contains(&text) {
@@ -312,7 +316,7 @@ fn find_distractor_texts(
         }
     }
 
-    (distinct.len() == INCORRECT_DISTRACTOR_COUNT).then_some(distinct)
+    (distinct.len() == incorrect_distractor_count).then_some(distinct)
 }
 
 /// The unordered Language Pair an entry belongs to (grilled-spec.md sec.
@@ -336,7 +340,7 @@ fn text_in_language(entry: &VocabularyEntry, language: &str) -> Option<String> {
 }
 
 /// Builds one Question's immutable option snapshot: the correct answer
-/// plus four incorrect distractors, shuffled together, with `Don't know`
+/// plus its incorrect distractors, shuffled together, with `Don't know`
 /// always last (grilled-spec.md sec. 3, 5).
 fn build_question(
     entry: &VocabularyEntry,
@@ -483,6 +487,7 @@ mod tests {
             TranslationDirection::SourceToTarget,
             fruit(),
             &others,
+            4,
         )
         .expect("expected four distractors");
 
@@ -509,6 +514,7 @@ mod tests {
             TranslationDirection::SourceToTarget,
             fruit(),
             &others,
+            4,
         )
         .expect("expected four distractors via fallback");
 
@@ -531,7 +537,8 @@ mod tests {
                 &target,
                 TranslationDirection::SourceToTarget,
                 fruit(),
-                &others
+                &others,
+                4,
             ),
             None
         );
@@ -556,6 +563,7 @@ mod tests {
             TranslationDirection::SourceToTarget,
             fruit(),
             &others,
+            4,
         )
         .expect("expected four distractors");
 
@@ -587,6 +595,7 @@ mod tests {
                 all_entries: &pool,
                 last_correct_at: &HashMap::new(),
                 min_interval_before_retest_days: 1.0,
+                incorrect_distractor_count: 4,
                 now: Utc::now(),
             },
             &mut rng(),
@@ -609,6 +618,7 @@ mod tests {
                 all_entries: &pool,
                 last_correct_at: &HashMap::new(),
                 min_interval_before_retest_days: 1.0,
+                incorrect_distractor_count: 4,
                 now: Utc::now(),
             },
             &mut rng(),
@@ -632,6 +642,7 @@ mod tests {
                 all_entries: &pool,
                 last_correct_at: &HashMap::new(),
                 min_interval_before_retest_days: 1.0,
+                incorrect_distractor_count: 4,
                 now: Utc::now(),
             },
             &mut rng(),
@@ -660,6 +671,7 @@ mod tests {
                 all_entries: &pool,
                 last_correct_at: &last_correct_at,
                 min_interval_before_retest_days: 1.0,
+                incorrect_distractor_count: 4,
                 now: Utc::now(),
             },
             &mut rng(),
@@ -688,6 +700,7 @@ mod tests {
                 all_entries: &pool,
                 last_correct_at: &HashMap::new(),
                 min_interval_before_retest_days: 1.0,
+                incorrect_distractor_count: 4,
                 now: Utc::now(),
             },
             &mut rng(),

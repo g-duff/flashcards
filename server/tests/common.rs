@@ -23,6 +23,7 @@ pub async fn spawn_app() -> (String, tempfile::TempDir) {
         cookie_lifetime_days: 365,
         question_count_min: 10,
         question_count_max: 20,
+        incorrect_distractor_count: 4,
         supported_languages: vec!["en".to_string(), "es".to_string()],
         algorithm_defaults: AlgorithmDefaults {
             correct_streak_threshold: 5,

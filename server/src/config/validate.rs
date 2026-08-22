@@ -27,6 +27,7 @@ pub struct Config {
     pub cookie_lifetime_days: i64,
     pub question_count_min: u32,
     pub question_count_max: u32,
+    pub incorrect_distractor_count: u32,
     pub supported_languages: Vec<String>,
     pub algorithm_defaults: AlgorithmDefaults,
     pub logging: LoggingConfig,
@@ -60,6 +61,8 @@ pub enum ConfigError {
     QuestionCountMinTooLow,
     #[error("question_count_min must not exceed question_count_max")]
     QuestionCountMinExceedsMax,
+    #[error("incorrect_distractor_count must be at least 1")]
+    IncorrectDistractorCountTooLow,
     #[error("session_inactivity_timeout_minutes must be positive")]
     NonPositiveSessionTimeout,
     #[error("cookie_lifetime_days must be positive")]
@@ -88,6 +91,9 @@ pub fn validate(raw: RawConfig) -> Result<Config, ConfigError> {
     if raw.question_count_min > raw.question_count_max {
         return Err(ConfigError::QuestionCountMinExceedsMax);
     }
+    if raw.incorrect_distractor_count < 1 {
+        return Err(ConfigError::IncorrectDistractorCountTooLow);
+    }
     if raw.session_inactivity_timeout_minutes <= 0 {
         return Err(ConfigError::NonPositiveSessionTimeout);
     }
@@ -106,6 +112,7 @@ pub fn validate(raw: RawConfig) -> Result<Config, ConfigError> {
         cookie_lifetime_days: raw.cookie_lifetime_days,
         question_count_min: raw.question_count_min,
         question_count_max: raw.question_count_max,
+        incorrect_distractor_count: raw.incorrect_distractor_count,
         supported_languages: raw.supported_languages,
         algorithm_defaults: raw.algorithm_defaults,
         logging,
@@ -142,6 +149,7 @@ mod tests {
             cookie_lifetime_days: 365,
             question_count_min: 10,
             question_count_max: 20,
+            incorrect_distractor_count: 4,
             supported_languages: vec!["en".to_string(), "es".to_string()],
             algorithm_defaults: AlgorithmDefaults {
                 correct_streak_threshold: 5,
@@ -210,6 +218,21 @@ mod tests {
         };
 
         assert_eq!(validate(raw), Err(ConfigError::QuestionCountMinExceedsMax));
+    }
+
+    // The number of incorrect distractors each Question must have is
+    // server-configurable (grilled-spec.md sec. 4; ticket 07).
+    #[test]
+    fn rejects_incorrect_distractor_count_below_one() {
+        let raw = RawConfig {
+            incorrect_distractor_count: 0,
+            ..valid_raw()
+        };
+
+        assert_eq!(
+            validate(raw),
+            Err(ConfigError::IncorrectDistractorCountTooLow)
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ session_inactivity_timeout_minutes: 30
 cookie_lifetime_days: 365
 question_count_min: 10
 question_count_max: 20
+incorrect_distractor_count: 4
 supported_languages:
   - en
   - es
