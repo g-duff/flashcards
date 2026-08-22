@@ -9,7 +9,9 @@
 //! seconds, so hand-rolling the header keeps `chrono` as the project's only
 //! date/time dependency.
 
+use axum::http::HeaderMap;
 use axum::http::HeaderValue;
+use axum::http::header::COOKIE;
 
 use crate::learners::LearnerId;
 
@@ -69,6 +71,15 @@ pub fn parse_learner_cookie(cookie_header: &str) -> Option<LearnerId> {
 pub fn parse_learner_cookie_presence(cookie_header: &str) -> Option<Option<LearnerId>> {
     let raw_value = learner_cookie_value(cookie_header)?;
     Some(raw_value.parse::<i64>().ok().map(LearnerId))
+}
+
+/// Derives the current Learner ID directly from a request's `Cookie`
+/// header, for Learner-scoped endpoints outside `http::session`. A missing
+/// or malformed cookie is treated as "no current Learner" (grilled-spec.md
+/// sec. 2, 5).
+pub fn learner_id_from_headers(headers: &HeaderMap) -> Option<LearnerId> {
+    let cookie_header = headers.get(COOKIE)?.to_str().ok()?;
+    parse_learner_cookie(cookie_header)
 }
 
 #[cfg(test)]

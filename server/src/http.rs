@@ -8,6 +8,7 @@ pub mod cookies;
 pub mod envelope;
 pub mod health;
 pub mod learners;
+pub mod practice_sessions;
 pub mod session;
 pub mod vocabulary_entries;
 
@@ -70,6 +71,14 @@ pub fn router(state: AppState) -> Router {
             get(vocabulary_entries::get_vocabulary_entry)
                 .patch(vocabulary_entries::update_vocabulary_entry)
                 .delete(vocabulary_entries::delete_vocabulary_entry),
+        )
+        .route(
+            "/api/practice-sessions",
+            axum::routing::post(practice_sessions::create_practice_session),
+        )
+        .route(
+            "/api/practice-sessions/{id}",
+            get(practice_sessions::get_practice_session),
         )
         .route(
             "/api/session/learner",

@@ -11,6 +11,9 @@ import {
 } from './api/learners'
 import Categories from './Categories'
 import AddVocabulary from './AddVocabulary'
+import ChoosePracticeCategory from './ChoosePracticeCategory'
+import Practice from './Practice'
+import type { PracticeSession } from './api/practiceSessions'
 
 type Screen =
   | { kind: 'loading' }
@@ -31,6 +34,7 @@ const Home = () => {
   const [renameValue, setRenameValue] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [categoriesVersion, setCategoriesVersion] = useState(0)
+  const [activeSession, setActiveSession] = useState<PracticeSession | undefined>(undefined)
 
   function selectScreen(learner: Learner) {
     setScreen({ kind: 'selected', learner })
@@ -176,6 +180,15 @@ const Home = () => {
         )}
 
         {feedback.kind === 'error' && <p role="alert">{feedback.message}</p>}
+
+        {activeSession ? (
+          <Practice
+            session={activeSession}
+            onChooseAnotherCategory={() => setActiveSession(undefined)}
+          />
+        ) : (
+          <ChoosePracticeCategory onSessionStarted={setActiveSession} />
+        )}
 
         <Categories onChanged={() => setCategoriesVersion((version) => version + 1)} />
         <AddVocabulary categoriesVersion={categoriesVersion} />
