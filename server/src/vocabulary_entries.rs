@@ -14,7 +14,7 @@ use crate::categories::CategoryId;
 /// A Vocabulary Entry's durable identity. Newtype over the raw row ID so a
 /// caller cannot accidentally pass an unrelated ID where a Vocabulary Entry
 /// ID is expected (server/CODING_STANDARDS.md sec. 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
 #[serde(transparent)]
 #[sqlx(transparent)]
 pub struct VocabularyEntryId(pub i64);
