@@ -6,6 +6,7 @@ session_inactivity_timeout_minutes: 30
 cookie_lifetime_days: 365
 question_count_min: 10
 question_count_max: 20
+incorrect_distractor_count: 4
 supported_languages:
   - en
   - es
@@ -22,3 +23,6 @@ algorithm_defaults:
   incorrect_weight: 3.0
   time_decay_factor: 0.5
   base_priority: 0.0
+logging:
+  format: "json"
+  level: "info"

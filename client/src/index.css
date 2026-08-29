@@ -1,8 +1,32 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
+  --blue-50: #eef6fc;
+  --blue-100: #dbeefa;
+  --blue-200: #bfe0f5;
+  --blue-300: #9ccfee;
+  --blue-500: #5b9bd5;
+  --blue-600: #4785bd;
+
+  --green-50: #eef9f2;
+  --green-100: #dbf3e3;
+  --green-200: #bce6cc;
+  --green-300: #9ad9b3;
+  --green-500: #58b583;
+  --green-600: #429c6c;
+
+  --red-100: #fbe2e2;
+  --red-500: #cf5b5b;
+  --red-600: #b64545;
+
+  --text: #4a5568;
+  --text-h: #253141;
+  --text-soft: #7c8a9c;
+  --bg: #f7fbfd;
+  --surface: #ffffff;
+  --border: #dce8ef;
+
+  --shadow: 0 1px 2px rgba(37, 49, 65, 0.04), 0 6px 16px rgba(91, 155, 213, 0.08);
+  --radius: 14px;
+  --radius-sm: 9px;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
 
@@ -16,10 +40,32 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
+    --blue-50: #182430;
+    --blue-100: #1d2f3d;
+    --blue-200: #24405373;
+    --blue-300: #3a5a72;
+    --blue-500: #6fa9de;
+    --blue-600: #8dbceb;
+
+    --green-50: #16241c;
+    --green-100: #1b3125;
+    --green-200: #234331;
+    --green-300: #2f5b41;
+    --green-500: #6fcf9b;
+    --green-600: #86dbae;
+
+    --red-100: #3a2323;
+    --red-500: #e08080;
+    --red-600: #e79999;
+
+    --text: #b7c2cf;
+    --text-h: #f0f4f8;
+    --text-soft: #8592a3;
+    --bg: #10151a;
+    --surface: #171e25;
+    --border: #263038;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.25);
   }
 }
 
@@ -30,6 +76,7 @@
 body {
   margin: 0;
   min-height: 100svh;
+  background: linear-gradient(180deg, var(--blue-50) 0%, var(--bg) 320px);
 }
 
 #root {
@@ -40,7 +87,157 @@ body {
 
 h1 {
   font-family: var(--sans);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-h);
   font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--text-h);
+  font-size: 18px;
+  margin: 0 0 0.9rem;
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+/* Forms */
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+input[type='text'],
+input:not([type]),
+input[type='email'],
+select {
+  font: inherit;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.6rem;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px var(--blue-100);
+}
+
+/* Buttons */
+
+button {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--blue-300);
+  background: var(--blue-100);
+  color: var(--blue-600);
+  padding: 0.55rem 1rem;
+  transition:
+    background 0.15s ease,
+    transform 0.05s ease,
+    box-shadow 0.15s ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--blue-200);
+  box-shadow: var(--shadow);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button[type='submit'] {
+  background: var(--green-100);
+  border-color: var(--green-300);
+  color: var(--green-600);
+  align-self: flex-start;
+}
+
+button[type='submit']:hover:not(:disabled) {
+  background: var(--green-200);
+}
+
+/* Fieldsets */
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+  margin: 0.3rem 0 0.9rem;
+}
+
+legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  padding: 0 0.35rem;
+}
+
+fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+  color: var(--text);
+  padding: 0.2rem 0;
+}
+
+fieldset input[type='checkbox'] {
+  accent-color: var(--green-500);
+  width: 1rem;
+  height: 1rem;
+}
+
+/* Lists */
+
+ul {
+  list-style: none;
+  margin: 0 0 0.9rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Alerts */
+
+[role='alert'] {
+  background: var(--red-100);
+  color: var(--red-600);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
 }

@@ -1,6 +1,6 @@
-use server::config::{AlgorithmDefaults, Config};
+use server::config::{AlgorithmDefaults, Config, LogFormat, LoggingConfig};
 use server::state::AppState;
-use server::{db, routes};
+use server::{db, http};
 
 /// Boots the real axum app against a freshly migrated, isolated SQLite
 /// database and returns its base URL. The database file lives in a
@@ -23,6 +23,7 @@ pub async fn spawn_app() -> (String, tempfile::TempDir) {
         cookie_lifetime_days: 365,
         question_count_min: 10,
         question_count_max: 20,
+        incorrect_distractor_count: 4,
         supported_languages: vec!["en".to_string(), "es".to_string()],
         algorithm_defaults: AlgorithmDefaults {
             correct_streak_threshold: 5,
@@ -34,10 +35,14 @@ pub async fn spawn_app() -> (String, tempfile::TempDir) {
             time_decay_factor: 0.5,
             base_priority: 0.0,
         },
+        logging: LoggingConfig {
+            format: LogFormat::Text,
+            level: "info".to_string(),
+        },
     };
 
     let state = AppState::new(pool, config);
-    let app = routes::router(state);
+    let app = http::router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

@@ -1,6 +1,6 @@
 import type { Optional, Result } from '../types/effects'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export interface SuccessEnvelope<T> {
   status: 'success'
@@ -60,4 +60,12 @@ export function apiPost<T>(path: string, body: unknown): Promise<Result<T, ApiEr
 
 export function apiDelete<T>(path: string): Promise<Result<T, ApiError>> {
   return apiRequest<T>(path, { method: 'DELETE' })
+}
+
+export function apiPatch<T>(path: string, body: unknown): Promise<Result<T, ApiError>> {
+  return apiRequest<T>(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }

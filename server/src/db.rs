@@ -60,5 +60,7 @@ pub async fn connect_and_migrate(
             source,
         })?;
 
+    tracing::info!(url = %database_url, migrations_path, "database connected and migrated");
+
     Ok(pool)
 }
