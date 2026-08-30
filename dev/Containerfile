@@ -1,15 +1,17 @@
-# Local, single-command run of the flashcards app: one image with nginx +
-# the Rust backend, wired like the pi (backend on loopback, nginx the only
-# published port, the real nginx.conf fragment). Not a deploy artifact —
-# production is server/Containerfile (cross-compiled static musl/ARMv6,
-# `podman build -o`, never run). See dev/README.md for fidelity notes.
+# Run the whole app locally in ONE container: nginx + the Rust backend,
+# wired like the pi — backend on 127.0.0.1:<port>, nginx the only
+# published port, routing through the app's REAL, unmodified nginx.conf
+# fragment loaded into a local copy of the shared nginx shell.
 #
-#   podman build -t sb-flashcards-dev -f dev/Containerfile .
+# NOT a deploy artifact. Production is server/Containerfile (cross-compiled
+# static musl/ARMv6, `podman build -o`, never run). This is the
+# integration check you run before a deploy; see dev/README.md.
 #
-# Build context is the repo root.
+#   ./dev/up.sh
+#
+# Build context is the app directory (the parent of dev/).
 
-# --- 1. client bundle ------------------------------------------------------
-# Hermetic: no host node/npm needed. Same output as `npm run build`.
+# --- 1. client bundle -------------------------------------------------
 FROM docker.io/library/node:22-bookworm AS client
 WORKDIR /app
 COPY client/package.json client/package-lock.json ./
@@ -17,40 +19,38 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY client/ ./
 RUN npm run build
 
-# --- 2. server binary ----------------------------------------------------
-# A plain native release build for the image's own arch — runs directly in
-# stage 3 (same Debian bookworm, same glibc). Production instead
-# cross-compiles a static musl/ARMv6 binary (server/Containerfile); musl
-# there is to dodge an ARMv6-specific glibc dynamic-linker bug that does
-# not exist off that hardware, so a native glibc build is representative
-# here. flashcards has no C deps, so nothing extra is needed.
+# --- 2. server binary -----------------------------------------------
+# A native glibc release build for the image's own arch — runs directly
+# in stage 3 (same Debian bookworm). Production cross-compiles a static
+# musl/ARMv6 binary instead; musl there is to dodge an ARMv6-specific
+# glibc dynamic-linker bug that does not exist off that hardware, so a
+# native glibc build is representative here. A C dependency builds fine
+# natively — the zig cc wrapper in server/Containerfile is only for the
+# ARM cross-build.
 FROM docker.io/library/rust:1-bookworm AS server
 WORKDIR /build
 COPY server/ ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     cargo build --release && \
-    cp target/release/pi_flashcards_server /pi_flashcards_server
+    cp "target/release/$(grep '^name' Cargo.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')" /server-bin
 
-# --- 3. runtime --------------------------------------------------------
-# Debian bookworm + nginx — the pi's distro and reverse proxy.
-FROM docker.io/library/nginx:bookworm
+# --- 3. runtime: Debian bookworm + nginx (the pi's distro & proxy) ---
+FROM docker.io/library/nginx:stable-bookworm
+ARG APP
 
-# The shared fleet nginx shell (vendored). The stock image already
-# `include`s /etc/nginx/conf.d/*.conf inside its http{} block, so dropping
-# the server{} here is equivalent to the pi's sites-enabled/ site.
 COPY dev/sandy-bank.conf /etc/nginx/conf.d/default.conf
-RUN mkdir -p /var/www/default /var/www/sandy-bank/flashcards && \
+RUN mkdir -p /var/www/default "/var/www/sandy-bank/${APP}" && \
     printf '<h1>sandy-bank</h1>\n' > /var/www/default/index.html
 
-# The REAL, unmodified app routing fragment — the same file `deploy.sh -n`
-# installs on the pi. Its proxy_pass http://127.0.0.1:8081/ works here
+# The REAL, unmodified routing fragment — the same file `deploy.sh -n`
+# installs on the pi. Its `proxy_pass http://127.0.0.1:<port>/` works here
 # because the backend runs in this same container.
-COPY nginx.conf /etc/nginx/sandy-bank.d/flashcards.conf
+COPY nginx.conf /etc/nginx/sandy-bank.d/app.conf
 
-COPY --from=client /app/dist/ /var/www/sandy-bank/flashcards/
-COPY --from=server /pi_flashcards_server /usr/local/bin/pi_flashcards_server
+COPY --from=client /app/dist/ /var/www/sandy-bank/${APP}/
+COPY --from=server /server-bin /usr/local/bin/app-server
+
 COPY dev/entrypoint.sh /entrypoint.sh
-
 EXPOSE 80
 ENTRYPOINT ["/entrypoint.sh"]
