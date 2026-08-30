@@ -4,13 +4,19 @@ info:
   title: pi-flashcards-server
   version: 0.1.0
   description: |
-    A tiny flashcards API for the Sandy Bank homelab fleet: list cards,
-    add a card, fetch one by id. The deck is in-memory — a process
-    restart resets it to the seed.
+    A tiny language-learning flashcards API for the Sandy Bank homelab
+    fleet. This version manages the vocabulary deck: list Terms, add a
+    Term, edit a Term's notes, delete a Term. Terms are persisted in
+    SQLite and survive a restart.
+
+    A Term's three text fields (`foreign_lang`, `foreign_text`,
+    `pivot_text`) are its identity: the `id` is a deterministic UUIDv5
+    derived from them, so re-posting the same Term returns the existing
+    row rather than creating a duplicate. Only `notes` is editable.
 
     Response-body convention:
-      - endpoints about one card return a `Card`
-      - endpoints about many cards return a bare `[Card, ...]`
+      - endpoints about one Term return a `Term`
+      - endpoints about many Terms return a bare `[Term, ...]`
       - every error returns `{ "error": "<message>" }`
       - success is always `200`
       - `GET /healthz` is the exception: `text/plain` `"ok"`
@@ -44,63 +50,101 @@ paths:
                 type: string
                 example: ok
 
-  /cards:
+  /terms:
     get:
-      operationId: listCards
-      summary: List every card
+      operationId: listTerms
+      summary: List every Term
       responses:
         "200":
-          description: All cards, insertion order
+          description: All Terms, oldest first
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Card"
+                  $ref: "#/components/schemas/Term"
     post:
-      operationId: createCard
-      summary: Add a card
+      operationId: createTerm
+      summary: Add a Term
+      description: |
+        Idempotent in the id: posting a Term whose three texts match an
+        existing Term returns that Term unchanged, with no new row.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NewCard"
+              $ref: "#/components/schemas/NewTerm"
       responses:
         "200":
-          description: The card as stored, with its assigned id
+          description: The Term as stored, with its derived id and created_at
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Card"
+                $ref: "#/components/schemas/Term"
         "400":
-          description: A side was empty or longer than 1000 characters
+          description: A text field was empty
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /cards/{id}:
-    get:
-      operationId: getCard
-      summary: Fetch one card by id
+  /terms/{id}:
+    patch:
+      operationId: patchTermNotes
+      summary: Edit a Term's notes
+      description: The three text fields are immutable identity; only `notes` can change.
       parameters:
         - name: id
           in: path
           required: true
           schema:
-            type: integer
-            format: int64
-            minimum: 1
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotesPatch"
       responses:
         "200":
-          description: The card
+          description: The updated Term
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Card"
+                $ref: "#/components/schemas/Term"
+        "400":
+          description: Malformed request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
-          description: No card with that id
+          description: No Term with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteTerm
+      summary: Delete a Term
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The id that was deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deleted"
+        "404":
+          description: No Term with that id
           content:
             application/json:
               schema:
@@ -108,36 +152,73 @@ paths:
 
 components:
   schemas:
-    Card:
+    Term:
       type: object
-      required: [id, front, back]
+      required: [id, foreign_lang, foreign_text, pivot_text, notes, created_at]
       properties:
         id:
-          type: integer
-          format: int64
-          example: 1
-        front:
           type: string
-          example: What does SPA stand for?
-        back:
+          format: uuid
+          description: Deterministic UUIDv5 over the three text fields
+          example: 9f1c1c8a-1b2d-5e3f-8a4b-6c7d8e9f0a1b
+        foreign_lang:
           type: string
-          example: Single-page application
-    NewCard:
+          description: ISO 639-1 code of the language being learned
+          example: es
+        foreign_text:
+          type: string
+          example: perro
+        pivot_text:
+          type: string
+          example: dog
+        notes:
+          type: string
+          nullable: true
+          description: The only editable field
+          example: el perro (m)
+        created_at:
+          type: string
+          format: date-time
+    NewTerm:
       type: object
-      required: [front, back]
+      required: [foreign_lang, foreign_text, pivot_text]
       properties:
-        front:
+        foreign_lang:
           type: string
           minLength: 1
-          maxLength: 1000
-        back:
+          example: es
+        foreign_text:
           type: string
           minLength: 1
-          maxLength: 1000
+          example: perro
+        pivot_text:
+          type: string
+          minLength: 1
+          example: dog
+        notes:
+          type: string
+          nullable: true
+          example: el perro (m)
+    NotesPatch:
+      type: object
+      required: [notes]
+      properties:
+        notes:
+          type: string
+          nullable: true
+          description: New notes value; null clears them
+    Deleted:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: string
+          format: uuid
+          description: The id of the Term that was removed
     Error:
       type: object
       required: [error]
       properties:
         error:
           type: string
-          example: front must not be empty
+          example: foreign_text must not be empty

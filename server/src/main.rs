@@ -4,27 +4,38 @@ mod http;
 mod model;
 mod store;
 
+use std::path::Path;
+
 use config::{Config, LogFormat};
 use http::AppState;
-use store::Store;
+use store::Db;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let config = Config::from_env();
     init_tracing(&config.log_format);
 
-    // In-memory card store, seeded with a few sample cards. This app has
-    // no persistence yet — a restart resets the deck. Swap `Store` for a
-    // SQLite-backed one (see the Sandy Bank downloads app) when it needs
-    // to survive a redeploy.
-    let state = AppState {
-        store: Store::seeded(),
+    // SQLite-backed Term store. The file (and its parent directory) is
+    // created on first run; the schema is brought up to date by the
+    // embedded migrations. A fresh database is empty — there is no seed.
+    let db = match Db::open(Path::new(&config.database_path)) {
+        Ok(db) => db,
+        Err(err) => {
+            tracing::error!(error = %err, path = %config.database_path, "failed to open database");
+            std::process::exit(1);
+        }
     };
+    tracing::info!(
+        database_path = %config.database_path,
+        pivot_lang = %config.pivot_lang,
+        "configuration loaded"
+    );
 
+    let state = AppState { db };
     let app = http::router(state);
 
     // nginx routes /flashcards/api/ here and strips the prefix, so this
-    // binary keeps its own routes (/healthz, /cards, ...). It must be
+    // binary keeps its own routes (/healthz, /terms, ...). It must be
     // reachable ONLY via nginx — bind loopback (BIND_ADDR in the
     // .service file).
     tracing::info!(bind = %config.bind_addr, "starting server");

@@ -7,6 +7,9 @@ set -euo pipefail
 
 export BIND_ADDR="${BIND_ADDR:-127.0.0.1:8081}"   # up.sh passes the fragment's port
 export RUST_LOG="${RUST_LOG:-info}"
+# The SQLite file lives on a named volume (see dev/up.sh) so the deck
+# survives ./dev/down.sh + ./dev/up.sh.
+export DATABASE_PATH="${DATABASE_PATH:-/data/flashcards.db}"
 
 app-server &
 backend=$!

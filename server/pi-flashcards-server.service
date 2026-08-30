@@ -10,6 +10,12 @@ WorkingDirectory=/home/george
 # this must never be reachable directly on the LAN.
 Environment=BIND_ADDR=127.0.0.1:8081
 Environment=RUST_LOG=info
+# systemd creates and owns /var/lib/pi-flashcards-server (0700, User=);
+# the SQLite file and its -wal/-shm siblings live there and survive
+# restarts and redeploys.
+StateDirectory=pi-flashcards-server
+Environment=DATABASE_PATH=/var/lib/pi-flashcards-server/flashcards.db
+Environment=PIVOT_LANG=en
 Restart=on-failure
 
 [Install]

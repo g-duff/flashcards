@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+/// <reference types="vitest/config" />
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // The app is served under http://<pi>/flashcards/, not /, so built asset
@@ -16,5 +17,10 @@ export default defineConfig({
         rewrite: (p) => p.replace(/^\/flashcards\/api/, ""),
       },
     },
+  },
+  test: {
+    environment: "jsdom",
+    globals: false,
+    setupFiles: ["./src/test/setup.ts"],
   },
 });

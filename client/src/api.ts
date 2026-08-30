@@ -6,7 +6,7 @@
 // /flashcards/api/ to the binary and strips it. In dev, vite.config.ts
 // proxies the same prefix to 127.0.0.1:8081.
 
-import type { Result } from "./types/effects";
+import type { Optional, Result } from "./types/effects";
 import { err, ok } from "./types/effects";
 
 const API_BASE = "/flashcards/api";
@@ -16,15 +16,22 @@ export type ApiError =
   | { kind: "http"; status: number; message: string }
   | { kind: "malformed"; detail: string };
 
-export type Card = {
-  id: number;
-  front: string;
-  back: string;
+/** A vocabulary pair. The three text fields are immutable identity; only
+ *  `notes` can be edited. `id` is a UUID derived from the texts. */
+export type Term = {
+  id: string;
+  foreign_lang: string;
+  foreign_text: string;
+  pivot_text: string;
+  notes: Optional<string>;
+  created_at: string;
 };
 
-export type NewCard = {
-  front: string;
-  back: string;
+export type NewTerm = {
+  foreign_lang: string;
+  foreign_text: string;
+  pivot_text: string;
+  notes?: Optional<string>;
 };
 
 const request = async <T>(
@@ -59,11 +66,29 @@ const request = async <T>(
   }
 };
 
-export const listCards = (): Promise<Result<Card[], ApiError>> =>
-  request<Card[]>("/cards");
+export const listTerms = (): Promise<Result<Term[], ApiError>> =>
+  request<Term[]>("/terms");
 
-export const createCard = (card: NewCard): Promise<Result<Card, ApiError>> =>
-  request<Card>("/cards", { method: "POST", body: JSON.stringify(card) });
+export const createTerm = (term: NewTerm): Promise<Result<Term, ApiError>> =>
+  request<Term>("/terms", { method: "POST", body: JSON.stringify(term) });
+
+export const patchTermNotes = (
+  id: string,
+  notes: Optional<string>,
+): Promise<Result<Term, ApiError>> =>
+  request<Term>(`/terms/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    // The server distinguishes "clear the notes" (null) from "absent";
+    // Optional<string> maps to one or the other here.
+    body: JSON.stringify({ notes: notes ?? null }),
+  });
+
+export const deleteTerm = (
+  id: string,
+): Promise<Result<{ deleted: string }, ApiError>> =>
+  request<{ deleted: string }>(`/terms/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 
 // --- helpers ---------------------------------------------------------------
 
