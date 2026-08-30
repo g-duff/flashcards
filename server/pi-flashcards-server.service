@@ -1,0 +1,16 @@
+[Unit]
+Description=pi-flashcards-server
+After=network-online.target
+
+[Service]
+User=george
+ExecStart=/home/george/pi_flashcards_server
+WorkingDirectory=/home/george
+# nginx is the only public entry point, routing /flashcards/api/ here —
+# this must never be reachable directly on the LAN.
+Environment=BIND_ADDR=127.0.0.1:8081
+Environment=RUST_LOG=info
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

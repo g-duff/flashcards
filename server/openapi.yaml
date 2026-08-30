@@ -1,0 +1,143 @@
+openapi: 3.0.3
+
+info:
+  title: pi-flashcards-server
+  version: 0.1.0
+  description: |
+    A tiny flashcards API for the Sandy Bank homelab fleet: list cards,
+    add a card, fetch one by id. The deck is in-memory — a process
+    restart resets it to the seed.
+
+    Response-body convention:
+      - endpoints about one card return a `Card`
+      - endpoints about many cards return a bare `[Card, ...]`
+      - every error returns `{ "error": "<message>" }`
+      - success is always `200`
+      - `GET /healthz` is the exception: `text/plain` `"ok"`
+
+# No authentication: the service binds to loopback and is only reachable
+# via the shared nginx proxy on the LAN (see pi-flashcards-server.service).
+security: []
+
+# Relative on purpose: resolves against wherever the spec was fetched
+# from. The shared Swagger UI loads it as /flashcards/openapi.yaml, and
+# the API is mounted one level down at /flashcards/api/ (nginx strips
+# that prefix before proxying), so "Try it out" hits the right origin
+# whether the box is reached as pi-0.local or a raw IP.
+servers:
+  - url: /flashcards/api
+    description: Through the shared nginx reverse proxy, which strips the /flashcards/api/ prefix
+  - url: http://localhost:8081
+    description: Direct to the process, as bound by BIND_ADDR (127.0.0.1:8081 under systemd)
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness check
+      responses:
+        "200":
+          description: Always "ok" while the process is up
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /cards:
+    get:
+      operationId: listCards
+      summary: List every card
+      responses:
+        "200":
+          description: All cards, insertion order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Card"
+    post:
+      operationId: createCard
+      summary: Add a card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewCard"
+      responses:
+        "200":
+          description: The card as stored, with its assigned id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+        "400":
+          description: A side was empty or longer than 1000 characters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /cards/{id}:
+    get:
+      operationId: getCard
+      summary: Fetch one card by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+        "404":
+          description: No card with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  schemas:
+    Card:
+      type: object
+      required: [id, front, back]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        front:
+          type: string
+          example: What does SPA stand for?
+        back:
+          type: string
+          example: Single-page application
+    NewCard:
+      type: object
+      required: [front, back]
+      properties:
+        front:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        back:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: front must not be empty

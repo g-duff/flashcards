@@ -1,0 +1,33 @@
+# Cross-compiles this crate for the Raspberry Pi Zero W (ARM1176JZF-S /
+# ARMv6) and emits ONLY the resulting static binary as the build output.
+#
+#   podman build -o type=local,dest=dist .
+#
+# Targets arm-unknown-linux-musleabihf so the binary is fully static: no
+# dependency on whatever glibc is on the pi, and no ARM cross-toolchain
+# needed to link it (musl's CRT startup objects ship in the Rust sysroot,
+# so rust-lld links them directly — see .cargo/config.toml). A
+# dynamically-linked gnueabihf build segfaulted on boot on this core
+# before main().
+#
+# This crate has no C-compiling dependency, so no zig cc wrapper is
+# needed (see the Sandy Bank downloads app for that variant).
+
+FROM docker.io/library/rust:1-bookworm AS builder
+
+RUN rustup target add arm-unknown-linux-musleabihf
+
+WORKDIR /workspace
+COPY .cargo .cargo
+COPY Cargo.toml Cargo.lock ./
+COPY src src
+# Compiled into the binary via include_str!("../openapi.yaml") so the
+# served spec can't drift from the build — see src/http/handlers.rs.
+COPY openapi.yaml ./
+
+RUN cargo build --release --target arm-unknown-linux-musleabihf
+
+# Export stage: FROM scratch so the output is nothing but the binary.
+# Never executed — `podman build -o` extracts its filesystem to the host.
+FROM scratch
+COPY --from=builder /workspace/target/arm-unknown-linux-musleabihf/release/pi_flashcards_server /pi_flashcards_server
