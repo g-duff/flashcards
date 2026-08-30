@@ -5,9 +5,12 @@
 // Paths are relative and carry the app prefix: nginx maps
 // /flashcards/api/ to the binary and strips it. In dev, vite.config.ts
 // proxies the same prefix to 127.0.0.1:8081.
+//
+// Resource modules (terms.ts, …) sit alongside this file and call the
+// thin verb helpers below; they never touch `fetch` directly.
 
-import type { Optional, Result } from "./types/effects";
-import { err, ok } from "./types/effects";
+import type { Result } from "../types/effects";
+import { err, ok } from "../types/effects";
 
 const API_BASE = "/flashcards/api";
 
@@ -15,24 +18,6 @@ export type ApiError =
   | { kind: "network"; detail: string }
   | { kind: "http"; status: number; message: string }
   | { kind: "malformed"; detail: string };
-
-/** A vocabulary pair. The three text fields are immutable identity; only
- *  `notes` can be edited. `id` is a UUID derived from the texts. */
-export type Term = {
-  id: string;
-  foreign_lang: string;
-  foreign_text: string;
-  pivot_text: string;
-  notes: Optional<string>;
-  created_at: string;
-};
-
-export type NewTerm = {
-  foreign_lang: string;
-  foreign_text: string;
-  pivot_text: string;
-  notes?: Optional<string>;
-};
 
 const request = async <T>(
   path: string,
@@ -66,29 +51,23 @@ const request = async <T>(
   }
 };
 
-export const listTerms = (): Promise<Result<Term[], ApiError>> =>
-  request<Term[]>("/terms");
+export const apiGet = <T>(path: string): Promise<Result<T, ApiError>> =>
+  request<T>(path);
 
-export const createTerm = (term: NewTerm): Promise<Result<Term, ApiError>> =>
-  request<Term>("/terms", { method: "POST", body: JSON.stringify(term) });
+export const apiPost = <T>(
+  path: string,
+  body: unknown,
+): Promise<Result<T, ApiError>> =>
+  request<T>(path, { method: "POST", body: JSON.stringify(body) });
 
-export const patchTermNotes = (
-  id: string,
-  notes: Optional<string>,
-): Promise<Result<Term, ApiError>> =>
-  request<Term>(`/terms/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    // The server distinguishes "clear the notes" (null) from "absent";
-    // Optional<string> maps to one or the other here.
-    body: JSON.stringify({ notes: notes ?? null }),
-  });
+export const apiPatch = <T>(
+  path: string,
+  body: unknown,
+): Promise<Result<T, ApiError>> =>
+  request<T>(path, { method: "PATCH", body: JSON.stringify(body) });
 
-export const deleteTerm = (
-  id: string,
-): Promise<Result<{ deleted: string }, ApiError>> =>
-  request<{ deleted: string }>(`/terms/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+export const apiDelete = <T>(path: string): Promise<Result<T, ApiError>> =>
+  request<T>(path, { method: "DELETE" });
 
 // --- helpers ---------------------------------------------------------------
 

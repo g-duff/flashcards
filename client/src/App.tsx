@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ComponentProps } from "react";
-import type { ApiError, NewTerm, Term } from "./api";
-import { createTerm, deleteTerm, listTerms, patchTermNotes } from "./api";
+import type { ApiError } from "./api/client";
+import type { NewTerm, Term } from "./api/terms";
+import { createTerm, deleteTerm, listTerms, patchTermNotes } from "./api/terms";
 import type { Optional, Result } from "./types/effects";
 import "./App.css";
 

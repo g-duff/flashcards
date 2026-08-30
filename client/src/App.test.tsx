@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ApiError, Term } from "./api";
+import type { ApiError } from "./api/client";
+import type { Term } from "./api/terms";
 import { ok } from "./types/effects";
 
-vi.mock("./api", () => ({
+vi.mock("./api/terms", () => ({
   listTerms: vi.fn(),
   createTerm: vi.fn(),
   patchTermNotes: vi.fn(),
@@ -12,7 +13,7 @@ vi.mock("./api", () => ({
 }));
 
 // Imported after the mock is registered.
-const api = await import("./api");
+const api = await import("./api/terms");
 const {
   App,
   toVocabState,
