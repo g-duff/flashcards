@@ -6,17 +6,17 @@ Per ADR-0001 the per-Card state is an opaque JSON blob the `Scheduler` owns; the
 
 **Blocked by:** None (can start immediately; lands alongside ticket 01 in `core.rs`).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] A `Rating` type (`pass` | `fail`) and a `Scheduler` trait in `core.rs` with:
+- [x] A `Rating` type (`pass` | `fail`) and a `Scheduler` trait in `core.rs` with:
   - `initial_state(now) -> (schedule_state, due_at)` for a new Card,
   - `on_review(schedule_state, rating, now) -> (schedule_state, due_at)`.
   - `schedule_state` is JSON (serialised opaque blob); `due_at` is a timestamp.
-- [ ] A box-model implementation of the trait. New Card starts at level 1, due immediately. `pass` → level + 1 (capped), next due further out per that level's interval. `fail` → level 1, due again soon. Constants (level count, per-level intervals) are named consts with a one-line rationale comment.
-- [ ] Unit tests in-file covering: initial state; promotion on repeated `pass` up to and including the cap; reset to level 1 on `fail` from every level; `due_at` moves forward correctly for each transition; state round-trips through its JSON form.
-- [ ] No use of wall-clock, filesystem, or network — `now` is always a parameter. `cargo test` green, `cargo clippy` clean.
+- [x] A box-model implementation of the trait. New Card starts at level 1, due immediately. `pass` → level + 1 (capped), next due further out per that level's interval. `fail` → level 1, due again soon. Constants (level count, per-level intervals) are named consts with a one-line rationale comment.
+- [x] Unit tests in-file covering: initial state; promotion on repeated `pass` up to and including the cap; reset to level 1 on `fail` from every level; `due_at` moves forward correctly for each transition; state round-trips through its JSON form.
+- [x] No use of wall-clock, filesystem, or network — `now` is always a parameter. `cargo test` green, `cargo clippy` clean.
 
 ## How to test it yourself
 
