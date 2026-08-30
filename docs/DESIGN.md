@@ -20,14 +20,17 @@ one-container local run.
 - Bulk import Terms from a delimited file (parsed in the browser).
 - Every Term yields two Cards — recognition and production.
 - Practice: fetch due Cards, flip, self-grade pass/fail, server
-  reschedules via the Leitner `Scheduler`.
+  reschedules via the box-model `Scheduler` (Leitner).
 - Every graded attempt is written to an append-only `review` log.
 - SQLite persistence (replaces the in-memory store).
 
 **Deferred — not in v1**
 
 - Typed-answer or multiple-choice practice modes.
-- Any Scheduler other than Leitner (the seam is built; the impl is not).
+- Any `Scheduler` other than the box model. The trait and one box-model
+  impl ship in v1; SM-2 / FSRS are later work, rebuilt from the `review`
+  log. Tuning the box model (box count, intervals, session cap) is a
+  code-level choice, not a design decision.
 - Decks, topics, or tags — one flat deck.
 - Multiple users, accounts, auth.
 - Editing a Term's text (identity — see Identifiers).
