@@ -32,7 +32,25 @@ RUN set -eux; \
 # cc-rs (libsqlite3-sys's build script) picks these up per-target. The
 # -mcpu pins codegen to the Pi Zero W's exact core so the amalgamation
 # is built for ARMv6, matching the Rust target.
-RUN printf '#!/bin/sh\nexec /opt/zig/zig cc -target arm-linux-musleabihf -mcpu=arm1176jzf_s "$@"\n' \
+#
+# The `cc` crate unconditionally appends its own "--target=<rustc-triple>"
+# ("arm-unknown-linux-musleabihf", vendor field and all) to every
+# clang-family invocation, even when $CC already names a target. zig's
+# target parser only understands its own 3-component arch-os-abi form and
+# errors on the 4-component rustc one ("UnknownOperatingSystem"). This
+# wrapper strips any "--target=" argument it is handed and substitutes
+# the correct one.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      'set -euo pipefail' \
+      'args=()' \
+      'for a in "$@"; do' \
+      '  case "$a" in' \
+      '    --target=*) ;;' \
+      '    *) args+=("$a") ;;' \
+      '  esac' \
+      'done' \
+      'exec /opt/zig/zig cc --target=arm-linux-musleabihf -mcpu=arm1176jzf_s "${args[@]}"' \
       > /usr/local/bin/armv6-musl-cc && \
     printf '#!/bin/sh\nexec /opt/zig/zig ar "$@"\n' \
       > /usr/local/bin/armv6-musl-ar && \
