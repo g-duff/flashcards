@@ -5,10 +5,22 @@
 //! The imperative shell (`http`, `store`, `main`) does the effects and
 //! calls in here for the decisions.
 
+pub mod scheduler;
+
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use crate::model::NewTerm;
+
+// Re-exported so callers reach the scheduling seam as `core::Scheduler`
+// (per `docs/DESIGN.md`), while the impl keeps its own file per the
+// module-layout standard. Unused until ticket 03 wires it in.
+#[allow(unused_imports)]
+pub use scheduler::{Leitner, Rating, Schedule, ScheduleStateError, Scheduler};
+
+/// The longest a card side may be. Arbitrary but generous — a flashcard
+/// is a prompt, not an essay.
+pub const MAX_SIDE_LEN: usize = 1_000;
 
 /// The one hardcoded namespace UUID every derived id in this app hashes
 /// under. Generated once (a random v4) and frozen — changing it would
