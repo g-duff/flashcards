@@ -72,7 +72,20 @@ curl http://<pi-lan-ip>:8081/healthz              # connection refused (loopback
 open  http://pi-0.local/docs/                      # flashcards in the dropdown (once the line is uncommented)
 ```
 
-## Local development
+## Run locally
+
+Whole app in one container (nginx + backend), wired like the pi and using the
+real `nginx.conf` fragment. Needs only `podman`:
+
+```sh
+./dev/up.sh        # build + run  -> http://localhost:8080/flashcards/
+./dev/down.sh      # stop + remove
+```
+
+See `dev/README.md` for what it verifies, pi-fidelity notes, and the real-ARMv6
+option.
+
+## Local development (fast inner loop)
 
 ```sh
 # backend
