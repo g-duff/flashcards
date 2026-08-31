@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ComponentProps } from "react";
 import type { ApiError } from "./api/client";
+import { listDueCards } from "./api/cards";
+import type { PracticeCard } from "./api/cards";
 import type { NewTerm, Term } from "./api/terms";
 import { createTerm, deleteTerm, listTerms, patchTermNotes } from "./api/terms";
+import { describeError } from "./errors";
+import { Practice } from "./Practice";
 import type { Optional, Result } from "./types/effects";
 import "./App.css";
 
@@ -11,8 +15,23 @@ type VocabState =
   | { status: "ready"; terms: Term[] }
   | { status: "failed"; error: ApiError };
 
+type DueState =
+  | { status: "loading" }
+  | { status: "ready"; count: number }
+  | { status: "failed"; error: ApiError };
+
+type View = "vocab" | "practice";
+
 export const App = () => {
+  const [view, setView] = useState<View>("vocab");
   const [vocab, setVocab] = useState<VocabState>({ status: "loading" });
+  const [due, setDue] = useState<DueState>({ status: "loading" });
+
+  const refreshDue = useCallback(() => {
+    void listDueCards(new Date().toISOString()).then((result) =>
+      setDue(toDueState(result)),
+    );
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -24,6 +43,8 @@ export const App = () => {
     };
   }, []);
 
+  useEffect(refreshDue, [refreshDue]);
+
   const withTerms = (update: (terms: Term[]) => Term[]) =>
     setVocab((current) =>
       current.status === "ready"
@@ -33,15 +54,62 @@ export const App = () => {
 
   return (
     <main className="app">
-      <h1>Vocab</h1>
-      <NewTermForm onAdded={(term) => withTerms((terms) => upsertTerm(terms, term))} />
-      <Vocab
-        state={vocab}
-        onNotesSaved={(term) => withTerms((terms) => upsertTerm(terms, term))}
-        onDeleted={(id) => withTerms((terms) => removeTerm(terms, id))}
-      />
+      {/* Persistent so the due count is visible from wherever the app
+          starts and while practising. */}
+      <header className="topbar">
+        <DueBadge state={due} />
+      </header>
+      {view === "vocab" ? (
+        <>
+          <div className="views">
+            <h1>Vocab</h1>
+            <button type="button" onClick={() => setView("practice")}>
+              Practice
+            </button>
+          </div>
+          <NewTermForm
+            onAdded={(term) => withTerms((terms) => upsertTerm(terms, term))}
+          />
+          <Vocab
+            state={vocab}
+            onNotesSaved={(term) => withTerms((terms) => upsertTerm(terms, term))}
+            onDeleted={(id) => withTerms((terms) => removeTerm(terms, id))}
+          />
+        </>
+      ) : (
+        <Practice
+          onCardPassed={() => setDue(decrementDue)}
+          onExit={() => {
+            setView("vocab");
+            refreshDue();
+          }}
+        />
+      )}
     </main>
   );
+};
+
+const DueBadge = ({ state }: { state: DueState }) => {
+  switch (state.status) {
+    case "loading":
+      return (
+        <span className="due-badge muted" aria-label="due count">
+          … due
+        </span>
+      );
+    case "failed":
+      return (
+        <span className="due-badge error" aria-label="due count">
+          due count unavailable
+        </span>
+      );
+    case "ready":
+      return (
+        <span className="due-badge" aria-label="due count">
+          {state.count} due
+        </span>
+      );
+  }
 };
 
 const Vocab = ({
@@ -258,6 +326,21 @@ export const toVocabState = (result: Result<Term[], ApiError>): VocabState =>
     ? { status: "ready", terms: result.value }
     : { status: "failed", error: result.error };
 
+/** The landing badge counts the Cards a `due_before=<now>` query returns. */
+export const toDueState = (
+  result: Result<PracticeCard[], ApiError>,
+): DueState =>
+  result.ok
+    ? { status: "ready", count: result.value.length }
+    : { status: "failed", error: result.error };
+
+/** A passing Review promotes a Card out of the due set, so the badge ticks
+ *  down; a failing one leaves it due, so the count is unchanged. */
+export const decrementDue = (state: DueState): DueState =>
+  state.status === "ready"
+    ? { status: "ready", count: Math.max(0, state.count - 1) }
+    : state;
+
 /** Insert `term`, or replace the existing row with the same id. The
  *  server's add endpoint is idempotent on id, so a re-add returns an
  *  existing Term — this keeps the list free of duplicates either way. */
@@ -279,15 +362,4 @@ export const isCompleteDraft = (draft: NewTerm): boolean =>
 const blankToUndefined = (value: string): Optional<string> => {
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
-};
-
-export const describeError = (error: ApiError): string => {
-  switch (error.kind) {
-    case "network":
-      return `Network error: ${error.detail}`;
-    case "http":
-      return `Server error ${error.status}: ${error.message}`;
-    case "malformed":
-      return `Bad response from server: ${error.detail}`;
-  }
 };

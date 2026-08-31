@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ApiError } from "./api/client";
+import type { PracticeCard } from "./api/cards";
 import type { Term } from "./api/terms";
 import { ok } from "./types/effects";
 
@@ -12,15 +13,22 @@ vi.mock("./api/terms", () => ({
   deleteTerm: vi.fn(),
 }));
 
-// Imported after the mock is registered.
+vi.mock("./api/cards", () => ({
+  listDueCards: vi.fn(),
+  createReview: vi.fn(),
+}));
+
+// Imported after the mocks are registered.
 const api = await import("./api/terms");
+const cardsApi = await import("./api/cards");
 const {
   App,
   toVocabState,
+  toDueState,
+  decrementDue,
   upsertTerm,
   removeTerm,
   isCompleteDraft,
-  describeError,
 } = await import("./App");
 
 const term = (over: Partial<Term> = {}): Term => ({
@@ -33,10 +41,26 @@ const term = (over: Partial<Term> = {}): Term => ({
   ...over,
 });
 
+const card = (over: Partial<PracticeCard> = {}): PracticeCard => ({
+  id: "card-1",
+  term_id: "term-1",
+  prompt_side: "foreign",
+  prompt: "gato",
+  answer: "cat",
+  notes: undefined,
+  due_at: "2026-01-01T00:00:00Z",
+  box: 1,
+  ...over,
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
+
+// The Vocab-screen tests below don't exercise Practice, but App still
+// queries the due count on mount for the badge.
+vi.mocked(cardsApi.listDueCards).mockResolvedValue(ok([]));
 
 describe("pure helpers", () => {
   it("maps a failed result to the failed view state", () => {
@@ -72,12 +96,25 @@ describe("pure helpers", () => {
     ).toBe(false);
   });
 
-  it("describeError is exhaustive over ApiError kinds", () => {
-    expect(describeError({ kind: "network", detail: "x" })).toMatch(/network/i);
-    expect(describeError({ kind: "http", status: 404, message: "nope" })).toMatch(
-      /404/,
-    );
-    expect(describeError({ kind: "malformed", detail: "x" })).toMatch(/bad response/i);
+  it("toDueState reads the count from the returned list, or carries the error", () => {
+    expect(toDueState(ok([card(), card()]))).toEqual({
+      status: "ready",
+      count: 2,
+    });
+    const error: ApiError = { kind: "network", detail: "x" };
+    expect(toDueState({ ok: false, error })).toEqual({ status: "failed", error });
+  });
+
+  it("decrementDue ticks a ready count down but never below zero", () => {
+    expect(decrementDue({ status: "ready", count: 3 })).toEqual({
+      status: "ready",
+      count: 2,
+    });
+    expect(decrementDue({ status: "ready", count: 0 })).toEqual({
+      status: "ready",
+      count: 0,
+    });
+    expect(decrementDue({ status: "loading" })).toEqual({ status: "loading" });
   });
 });
 
@@ -142,5 +179,41 @@ describe("Vocab screen", () => {
       expect(screen.getByText("No terms yet. Add one above.")).toBeInTheDocument(),
     );
     confirm.mockRestore();
+  });
+});
+
+describe("due badge and Practice navigation", () => {
+  it("shows the due count on the landing view from a due_before query", async () => {
+    vi.mocked(api.listTerms).mockResolvedValue(ok([]));
+    vi.mocked(cardsApi.listDueCards).mockResolvedValue(
+      ok([card({ id: "c1" }), card({ id: "c2" }), card({ id: "c3" })]),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("due count")).toHaveTextContent("3 due");
+  });
+
+  it("ticks the badge down as Cards are passed in Practice", async () => {
+    vi.mocked(api.listTerms).mockResolvedValue(ok([]));
+    vi.mocked(cardsApi.listDueCards).mockResolvedValue(
+      ok([card({ id: "c1", prompt: "uno" }), card({ id: "c2", prompt: "dos" })]),
+    );
+    vi.mocked(cardsApi.createReview).mockImplementation((id) =>
+      Promise.resolve(ok(card({ id }))),
+    );
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("due count")).toHaveTextContent("2 due");
+
+    await user.click(screen.getByRole("button", { name: "Practice" }));
+    await user.click(await screen.findByRole("button", { name: "Reveal answer" }));
+    await user.click(screen.getByRole("button", { name: "Pass" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("due count")).toHaveTextContent("1 due"),
+    );
   });
 });
