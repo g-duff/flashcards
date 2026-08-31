@@ -7,16 +7,16 @@
 
 pub mod scheduler;
 
+use chrono::{DateTime, Utc};
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
-use crate::model::NewTerm;
+use crate::model::{NewTerm, PromptSide};
 
 // Re-exported so callers reach the scheduling seam as `core::Scheduler`
 // (per `docs/DESIGN.md`), while the impl keeps its own file per the
-// module-layout standard. Unused until ticket 03 wires it in.
-#[allow(unused_imports)]
-pub use scheduler::{Leitner, Rating, Schedule, ScheduleStateError, Scheduler};
+// module-layout standard.
+pub use scheduler::{Leitner, Schedule, Scheduler};
 
 /// The longest a card side may be. Arbitrary but generous — a flashcard
 /// is a prompt, not an essay.
@@ -60,6 +60,51 @@ pub fn canonical_name(term: &NewTerm) -> String {
 /// produce the same id — this is what makes import idempotent.
 pub fn term_id(term: &NewTerm) -> Uuid {
     Uuid::new_v5(&APP_NS, canonical_name(term).as_bytes())
+}
+
+/// The deterministic UUIDv5 id for a Card: hashed over
+/// `term_id ␟ prompt_side` under [`APP_NS`]. A Term's two Cards therefore
+/// have stable, distinct ids, so creating them is idempotent just like
+/// the Term itself.
+pub fn card_id(term_id: &str, prompt_side: PromptSide) -> Uuid {
+    let canonical = [term_id, prompt_side.as_str()].join(UNIT_SEP);
+    Uuid::new_v5(&APP_NS, canonical.as_bytes())
+}
+
+/// Resolve the `(prompt, answer)` a Card shows from its Term's two texts.
+/// `Foreign` prompts with the foreign text and expects the pivot text;
+/// `Pivot` is the reverse.
+pub fn prompt_and_answer(
+    prompt_side: PromptSide,
+    foreign_text: &str,
+    pivot_text: &str,
+) -> (String, String) {
+    match prompt_side {
+        PromptSide::Foreign => (foreign_text.to_string(), pivot_text.to_string()),
+        PromptSide::Pivot => (pivot_text.to_string(), foreign_text.to_string()),
+    }
+}
+
+/// A Card ready to be inserted alongside its Term: the derived id, the
+/// side it prompts, and its starting schedule from the active
+/// [`Scheduler`].
+#[derive(Clone, Debug)]
+pub struct CardSeed {
+    pub id: String,
+    pub prompt_side: PromptSide,
+    pub schedule: Schedule,
+}
+
+/// The two Cards a Term yields — recognition (`Foreign`) and production
+/// (`Pivot`) — each with its id derived from `term_id` and its initial
+/// schedule from `scheduler`. This is the one place the pair is built, so
+/// `POST /terms` and `POST /terms/import` (ticket 05) stay in step.
+pub fn card_seeds(term_id: &str, scheduler: &dyn Scheduler, now: DateTime<Utc>) -> [CardSeed; 2] {
+    PromptSide::ALL.map(|prompt_side| CardSeed {
+        id: card_id(term_id, prompt_side).to_string(),
+        prompt_side,
+        schedule: scheduler.initial_state(now),
+    })
 }
 
 /// Validate a new Term: each of the three text fields must be non-empty
@@ -144,6 +189,62 @@ mod tests {
             term_id(&term("es", "perro", "dog")).get_version(),
             Some(uuid::Version::Sha1),
         );
+    }
+
+    #[test]
+    fn card_id_is_stable_for_the_same_term_and_side() {
+        let term = "9f1c1c8a-1b2d-5e3f-8a4b-6c7d8e9f0a1b";
+        assert_eq!(
+            card_id(term, PromptSide::Foreign),
+            card_id(term, PromptSide::Foreign),
+        );
+    }
+
+    #[test]
+    fn card_id_differs_by_side_and_by_term() {
+        let term = "9f1c1c8a-1b2d-5e3f-8a4b-6c7d8e9f0a1b";
+        assert_ne!(
+            card_id(term, PromptSide::Foreign),
+            card_id(term, PromptSide::Pivot),
+        );
+        assert_ne!(
+            card_id(term, PromptSide::Foreign),
+            card_id("another-term", PromptSide::Foreign),
+        );
+    }
+
+    #[test]
+    fn card_id_is_a_v5_uuid() {
+        assert_eq!(
+            card_id("t", PromptSide::Pivot).get_version(),
+            Some(uuid::Version::Sha1),
+        );
+    }
+
+    #[test]
+    fn prompt_and_answer_follows_the_prompt_side() {
+        assert_eq!(
+            prompt_and_answer(PromptSide::Foreign, "gato", "cat"),
+            ("gato".to_string(), "cat".to_string()),
+        );
+        assert_eq!(
+            prompt_and_answer(PromptSide::Pivot, "gato", "cat"),
+            ("cat".to_string(), "gato".to_string()),
+        );
+    }
+
+    #[test]
+    fn card_seeds_builds_one_card_per_side_each_in_box_1_due_now() {
+        let now = chrono::TimeZone::with_ymd_and_hms(&Utc, 2026, 1, 1, 12, 0, 0).unwrap();
+        let seeds = card_seeds("term-1", &Leitner, now);
+
+        assert_eq!(seeds[0].prompt_side, PromptSide::Foreign);
+        assert_eq!(seeds[1].prompt_side, PromptSide::Pivot);
+        assert_ne!(seeds[0].id, seeds[1].id);
+        for seed in &seeds {
+            assert_eq!(seed.schedule.state, r#"{"box":1}"#);
+            assert_eq!(seed.schedule.due_at, now);
+        }
     }
 
     #[test]

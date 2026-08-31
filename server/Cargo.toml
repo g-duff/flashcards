@@ -16,7 +16,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 rusqlite = { version = "0.39", features = ["bundled"] }
 rusqlite_migration = "2.5"
-uuid = { version = "1.26.0", features = ["v5"] }
+uuid = { version = "1.26.0", features = ["v5", "v7"] }
 unicode-normalization = "0.1.25"
 
 [dev-dependencies]

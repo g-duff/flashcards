@@ -5,8 +5,10 @@ mod model;
 mod store;
 
 use std::path::Path;
+use std::sync::Arc;
 
 use config::{Config, LogFormat};
+use core::{Leitner, Scheduler};
 use http::AppState;
 use store::Db;
 
@@ -31,7 +33,12 @@ async fn main() {
         "configuration loaded"
     );
 
-    let state = AppState { db };
+    // The scheduling seam: one strategy, resolved here (ADR-0001).
+    // Swapping Leitner for SM-2/FSRS later is this line plus the new
+    // `core` type — no schema change.
+    let scheduler: Arc<dyn Scheduler + Send + Sync> = Arc::new(Leitner);
+
+    let state = AppState { db, scheduler };
     let app = http::router(state);
 
     // nginx routes /flashcards/api/ here and strips the prefix, so this

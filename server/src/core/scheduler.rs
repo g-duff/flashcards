@@ -5,23 +5,12 @@
 //! fail. Per ADR-0001 the per-Card `schedule_state` is an opaque JSON
 //! string this module owns; the database never looks inside it. `now` is
 //! always a parameter, so nothing here reads a clock.
-//!
-//! Nothing wires this in yet — ticket 03 (cards + scheduling backend) is
-//! the first caller — so the module allows dead code until then.
-#![allow(dead_code)]
 
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::json;
 
-/// A learner's self-graded outcome for one Card review. `pass` promotes the
-/// Card a box; `fail` sends it back to the first box.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Rating {
-    Pass,
-    Fail,
-}
+use crate::model::Rating;
 
 /// Where a Card stands after a `Scheduler` decision: the opaque state blob
 /// the strategy owns (ADR-0001) and the instant the Card next falls due.
@@ -64,6 +53,17 @@ const BOX_INTERVAL_DAYS: [i64; BOX_COUNT as usize] = [1, 2, 4, 8, 16];
 
 /// The v1 box-model `Scheduler` (Leitner). Its state blob is `{"box": N}`.
 pub struct Leitner;
+
+impl Leitner {
+    /// The Leitner box a `state` blob encodes, clamped into range, for
+    /// display in a `PracticeCard`. `None` when the blob is not one this
+    /// strategy wrote (per ADR-0001 the caller would then replay reviews).
+    pub fn box_of(state: &str) -> Option<u8> {
+        serde_json::from_str::<LeitnerState>(state)
+            .ok()
+            .map(|s| LeitnerState::at(s.box_number).box_number)
+    }
+}
 
 /// Leitner's private view of a `state` blob.
 #[derive(Debug, Deserialize)]
@@ -225,14 +225,15 @@ mod tests {
     }
 
     #[test]
-    fn rating_deserialises_from_its_lowercase_wire_form() {
-        assert_eq!(
-            serde_json::from_str::<Rating>(r#""pass""#).unwrap(),
-            Rating::Pass,
-        );
-        assert_eq!(
-            serde_json::from_str::<Rating>(r#""fail""#).unwrap(),
-            Rating::Fail,
-        );
+    fn box_of_reads_a_leitner_blob_and_clamps_it() {
+        assert_eq!(Leitner::box_of(r#"{"box":3}"#), Some(3));
+        assert_eq!(Leitner::box_of(r#"{"box":99}"#), Some(BOX_COUNT));
+        assert_eq!(Leitner::box_of(r#"{"box":0}"#), Some(1));
+    }
+
+    #[test]
+    fn box_of_rejects_a_blob_this_strategy_did_not_write() {
+        assert_eq!(Leitner::box_of("not json"), None);
+        assert_eq!(Leitner::box_of(r#"{"ease":2.5}"#), None);
     }
 }
