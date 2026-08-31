@@ -5,22 +5,64 @@
 #
 # Targets arm-unknown-linux-musleabihf so the binary is fully static: no
 # dependency on whatever glibc is on the pi, and no ARM cross-toolchain
-# needed to link it (musl's CRT startup objects ship in the Rust sysroot,
+# needed to LINK it (musl's CRT startup objects ship in the Rust sysroot,
 # so rust-lld links them directly — see .cargo/config.toml). A
 # dynamically-linked gnueabihf build segfaulted on boot on this core
 # before main().
 #
-# This crate has no C-compiling dependency, so no zig cc wrapper is
-# needed (see the Sandy Bank downloads app for that variant).
+# rusqlite's "bundled" feature makes libsqlite3-sys COMPILE the SQLite C
+# amalgamation for the target, so this build now needs a C cross-compiler
+# (it did not before). zig supplies one: `zig cc` / `zig ar` are wired in
+# as cc-rs's target toolchain below. The crate's own Rust code still
+# links with rust-lld — zig only compiles the C.
 
 FROM docker.io/library/rust:1-bookworm AS builder
 
 RUN rustup target add arm-unknown-linux-musleabihf
 
+# zig: the C cross-compiler for the SQLite amalgamation. Pinned; the
+# tarball arch matches the build host (amd64 or arm64).
+ARG ZIG_VERSION=0.13.0
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-${arch}-${ZIG_VERSION}.tar.xz" \
+      | tar -xJ -C /opt; \
+    mv "/opt/zig-linux-${arch}-${ZIG_VERSION}" /opt/zig
+
+# cc-rs (libsqlite3-sys's build script) picks these up per-target. The
+# -mcpu pins codegen to the Pi Zero W's exact core so the amalgamation
+# is built for ARMv6, matching the Rust target.
+#
+# The `cc` crate unconditionally appends its own "--target=<rustc-triple>"
+# ("arm-unknown-linux-musleabihf", vendor field and all) to every
+# clang-family invocation, even when $CC already names a target. zig's
+# target parser only understands its own 3-component arch-os-abi form and
+# errors on the 4-component rustc one ("UnknownOperatingSystem"). This
+# wrapper strips any "--target=" argument it is handed and substitutes
+# the correct one.
+RUN printf '%s\n' \
+      '#!/bin/bash' \
+      'set -euo pipefail' \
+      'args=()' \
+      'for a in "$@"; do' \
+      '  case "$a" in' \
+      '    --target=*) ;;' \
+      '    *) args+=("$a") ;;' \
+      '  esac' \
+      'done' \
+      'exec /opt/zig/zig cc --target=arm-linux-musleabihf -mcpu=arm1176jzf_s "${args[@]}"' \
+      > /usr/local/bin/armv6-musl-cc && \
+    printf '#!/bin/sh\nexec /opt/zig/zig ar "$@"\n' \
+      > /usr/local/bin/armv6-musl-ar && \
+    chmod +x /usr/local/bin/armv6-musl-cc /usr/local/bin/armv6-musl-ar
+ENV CC_arm_unknown_linux_musleabihf=/usr/local/bin/armv6-musl-cc \
+    AR_arm_unknown_linux_musleabihf=/usr/local/bin/armv6-musl-ar
+
 WORKDIR /workspace
 COPY .cargo .cargo
 COPY Cargo.toml Cargo.lock ./
 COPY src src
+COPY migrations migrations
 # Compiled into the binary via include_str!("../openapi.yaml") so the
 # served spec can't drift from the build — see src/http/handlers.rs.
 COPY openapi.yaml ./

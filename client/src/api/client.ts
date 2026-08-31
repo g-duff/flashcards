@@ -5,9 +5,12 @@
 // Paths are relative and carry the app prefix: nginx maps
 // /flashcards/api/ to the binary and strips it. In dev, vite.config.ts
 // proxies the same prefix to 127.0.0.1:8081.
+//
+// Resource modules (terms.ts, …) sit alongside this file and call the
+// thin verb helpers below; they never touch `fetch` directly.
 
-import type { Result } from "./types/effects";
-import { err, ok } from "./types/effects";
+import type { Result } from "../types/effects";
+import { err, ok } from "../types/effects";
 
 const API_BASE = "/flashcards/api";
 
@@ -15,17 +18,6 @@ export type ApiError =
   | { kind: "network"; detail: string }
   | { kind: "http"; status: number; message: string }
   | { kind: "malformed"; detail: string };
-
-export type Card = {
-  id: number;
-  front: string;
-  back: string;
-};
-
-export type NewCard = {
-  front: string;
-  back: string;
-};
 
 const request = async <T>(
   path: string,
@@ -59,11 +51,23 @@ const request = async <T>(
   }
 };
 
-export const listCards = (): Promise<Result<Card[], ApiError>> =>
-  request<Card[]>("/cards");
+export const apiGet = <T>(path: string): Promise<Result<T, ApiError>> =>
+  request<T>(path);
 
-export const createCard = (card: NewCard): Promise<Result<Card, ApiError>> =>
-  request<Card>("/cards", { method: "POST", body: JSON.stringify(card) });
+export const apiPost = <T>(
+  path: string,
+  body: unknown,
+): Promise<Result<T, ApiError>> =>
+  request<T>(path, { method: "POST", body: JSON.stringify(body) });
+
+export const apiPatch = <T>(
+  path: string,
+  body: unknown,
+): Promise<Result<T, ApiError>> =>
+  request<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+
+export const apiDelete = <T>(path: string): Promise<Result<T, ApiError>> =>
+  request<T>(path, { method: "DELETE" });
 
 // --- helpers ---------------------------------------------------------------
 

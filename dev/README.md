@@ -19,6 +19,10 @@ podman logs -f sb-flashcards-dev  # both processes' logs
 Only `podman` is needed on the host — the client bundle and the server
 binary are both built inside the image.
 
+The SQLite database lives on a named podman volume (`sb-flashcards-dev-data`,
+mounted at `/data`), so the deck survives `./dev/down.sh` + `./dev/up.sh`.
+Reset it with `podman volume rm sb-flashcards-dev-data`.
+
 ## What it checks
 
 The integration seam that `vite dev` can't: prefix stripping
@@ -30,7 +34,7 @@ fragment that ships to the pi.
 | Verify | Expect |
 |---|---|
 | `curl -sf localhost:8080/flashcards/api/healthz` | `ok` |
-| `curl -s localhost:8080/flashcards/api/cards` | `[{"id":1,...}, ...]` |
+| `curl -s localhost:8080/flashcards/api/terms` | `[]` on a fresh volume, else `[{"id":"…", …}]` |
 | `curl -s localhost:8080/flashcards/openapi.yaml \| head -1` | `openapi: 3.0.3` |
 | `curl -s localhost:8080/flashcards/deck/42` | the SPA `index.html` (deep-link fallback) |
 | `curl -s localhost:8080/` | `<h1>sandy-bank</h1>` (shell fallthrough) |

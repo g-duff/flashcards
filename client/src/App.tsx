@@ -1,89 +1,121 @@
 import { useEffect, useState } from "react";
 import type { ComponentProps } from "react";
-import type { ApiError, Card } from "./api";
-import { createCard, listCards } from "./api";
+import type { ApiError } from "./api/client";
+import type { NewTerm, Term } from "./api/terms";
+import { createTerm, deleteTerm, listTerms, patchTermNotes } from "./api/terms";
 import type { Optional, Result } from "./types/effects";
 import "./App.css";
 
-type DeckState =
+type VocabState =
   | { status: "loading" }
-  | { status: "ready"; cards: Card[] }
+  | { status: "ready"; terms: Term[] }
   | { status: "failed"; error: ApiError };
 
 export const App = () => {
-  const [deck, setDeck] = useState<DeckState>({ status: "loading" });
+  const [vocab, setVocab] = useState<VocabState>({ status: "loading" });
 
   useEffect(() => {
     let live = true;
-    void listCards().then((result) => {
-      if (!live) return;
-      setDeck(toDeckState(result));
+    void listTerms().then((result) => {
+      if (live) setVocab(toVocabState(result));
     });
     return () => {
       live = false;
     };
   }, []);
 
-  const handleCreated = (card: Card) => {
-    setDeck((current) =>
+  const withTerms = (update: (terms: Term[]) => Term[]) =>
+    setVocab((current) =>
       current.status === "ready"
-        ? { status: "ready", cards: [...current.cards, card] }
+        ? { status: "ready", terms: update(current.terms) }
         : current,
     );
-  };
 
   return (
     <main className="app">
-      <h1>Flashcards</h1>
-      <NewCardForm onCreated={handleCreated} />
-      <Deck state={deck} />
+      <h1>Vocab</h1>
+      <NewTermForm onAdded={(term) => withTerms((terms) => upsertTerm(terms, term))} />
+      <Vocab
+        state={vocab}
+        onNotesSaved={(term) => withTerms((terms) => upsertTerm(terms, term))}
+        onDeleted={(id) => withTerms((terms) => removeTerm(terms, id))}
+      />
     </main>
   );
 };
 
-const Deck = ({ state }: { state: DeckState }) => {
+const Vocab = ({
+  state,
+  onNotesSaved,
+  onDeleted,
+}: {
+  state: VocabState;
+  onNotesSaved: (term: Term) => void;
+  onDeleted: (id: string) => void;
+}) => {
   switch (state.status) {
     case "loading":
       return <p className="muted">Loading…</p>;
     case "failed":
       return <p className="error">{describeError(state.error)}</p>;
     case "ready":
-      return state.cards.length === 0 ? (
-        <p className="muted">No cards yet. Add one above.</p>
+      return state.terms.length === 0 ? (
+        <p className="muted">No terms yet. Add one above.</p>
       ) : (
-        <ul className="cards">
-          {state.cards.map((card) => (
-            <li key={card.id} className="card">
-              <span className="front">{card.front}</span>
-              <span className="back">{card.back}</span>
-            </li>
-          ))}
-        </ul>
+        <table className="terms">
+          <thead>
+            <tr>
+              <th>Foreign</th>
+              <th>Pivot</th>
+              <th>Lang</th>
+              <th>Notes</th>
+              <th aria-label="actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {state.terms.map((term) => (
+              <TermRow
+                key={term.id}
+                term={term}
+                onNotesSaved={onNotesSaved}
+                onDeleted={onDeleted}
+              />
+            ))}
+          </tbody>
+        </table>
       );
   }
 };
 
-const NewCardForm = ({ onCreated }: { onCreated: (card: Card) => void }) => {
-  const [front, setFront] = useState("");
-  const [back, setBack] = useState("");
+const NewTermForm = ({ onAdded }: { onAdded: (term: Term) => void }) => {
+  const [foreignLang, setForeignLang] = useState("");
+  const [foreignText, setForeignText] = useState("");
+  const [pivotText, setPivotText] = useState("");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<Optional<string>>(undefined);
 
-  const canSubmit = front.trim().length > 0 && back.trim().length > 0 && !submitting;
+  const draft: NewTerm = {
+    foreign_lang: foreignLang.trim(),
+    foreign_text: foreignText.trim(),
+    pivot_text: pivotText.trim(),
+    notes: blankToUndefined(notes),
+  };
+  const canSubmit = isCompleteDraft(draft) && !submitting;
 
-  // Param type is inferred from the `onSubmit` prop — React 19's types
-  // deprecate the standalone `FormEvent` alias.
   const handleSubmit: ComponentProps<"form">["onSubmit"] = (event) => {
     event.preventDefault();
     if (!canSubmit) return;
     setSubmitting(true);
     setError(undefined);
-    void createCard({ front, back }).then((result) => {
+    void createTerm(draft).then((result) => {
       setSubmitting(false);
       if (result.ok) {
-        onCreated(result.value);
-        setFront("");
-        setBack("");
+        onAdded(result.value);
+        setForeignLang("");
+        setForeignText("");
+        setPivotText("");
+        setNotes("");
       } else {
         setError(describeError(result.error));
       }
@@ -91,35 +123,165 @@ const NewCardForm = ({ onCreated }: { onCreated: (card: Card) => void }) => {
   };
 
   return (
-    <form className="new-card" onSubmit={handleSubmit}>
+    <form className="new-term" onSubmit={handleSubmit}>
       <input
-        aria-label="front"
-        placeholder="Front"
-        value={front}
-        onChange={(e) => setFront(e.target.value)}
+        aria-label="foreign text"
+        placeholder="Foreign text"
+        value={foreignText}
+        onChange={(e) => setForeignText(e.target.value)}
       />
       <input
-        aria-label="back"
-        placeholder="Back"
-        value={back}
-        onChange={(e) => setBack(e.target.value)}
+        aria-label="pivot text"
+        placeholder="Pivot text"
+        value={pivotText}
+        onChange={(e) => setPivotText(e.target.value)}
+      />
+      <input
+        aria-label="foreign lang"
+        placeholder="Lang (e.g. es)"
+        value={foreignLang}
+        onChange={(e) => setForeignLang(e.target.value)}
+      />
+      <input
+        aria-label="notes"
+        placeholder="Notes (optional)"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
       />
       <button type="submit" disabled={!canSubmit}>
-        {submitting ? "Adding…" : "Add card"}
+        {submitting ? "Adding…" : "Add term"}
       </button>
       {error !== undefined && <p className="error">{error}</p>}
     </form>
   );
 };
 
+const TermRow = ({
+  term,
+  onNotesSaved,
+  onDeleted,
+}: {
+  term: Term;
+  onNotesSaved: (term: Term) => void;
+  onDeleted: (id: string) => void;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<Optional<string>>(undefined);
+
+  const startEdit = () => {
+    setDraft(term.notes ?? "");
+    setError(undefined);
+    setEditing(true);
+  };
+
+  const save = () => {
+    setBusy(true);
+    setError(undefined);
+    void patchTermNotes(term.id, blankToUndefined(draft)).then((result) => {
+      setBusy(false);
+      if (result.ok) {
+        onNotesSaved(result.value);
+        setEditing(false);
+      } else {
+        setError(describeError(result.error));
+      }
+    });
+  };
+
+  const remove = () => {
+    if (!window.confirm(`Delete "${term.foreign_text}"? This cannot be undone.`))
+      return;
+    setBusy(true);
+    setError(undefined);
+    void deleteTerm(term.id).then((result) => {
+      setBusy(false);
+      if (result.ok) {
+        onDeleted(term.id);
+      } else {
+        setError(describeError(result.error));
+      }
+    });
+  };
+
+  return (
+    <tr>
+      <td>{term.foreign_text}</td>
+      <td>{term.pivot_text}</td>
+      <td>{term.foreign_lang}</td>
+      <td>
+        {editing ? (
+          <span className="notes-edit">
+            <input
+              aria-label={`notes for ${term.foreign_text}`}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              disabled={busy}
+            />
+            <button type="button" onClick={save} disabled={busy}>
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button type="button" className="notes-display" onClick={startEdit}>
+            {term.notes ?? <span className="muted">Add notes</span>}
+          </button>
+        )}
+        {error !== undefined && <p className="error">{error}</p>}
+      </td>
+      <td>
+        <button
+          type="button"
+          className="delete"
+          onClick={remove}
+          disabled={busy}
+        >
+          Delete
+        </button>
+      </td>
+    </tr>
+  );
+};
+
 // --- pure helpers --------------------------------------------------------
 
-const toDeckState = (result: Result<Card[], ApiError>): DeckState =>
+export const toVocabState = (result: Result<Term[], ApiError>): VocabState =>
   result.ok
-    ? { status: "ready", cards: result.value }
+    ? { status: "ready", terms: result.value }
     : { status: "failed", error: result.error };
 
-const describeError = (error: ApiError): string => {
+/** Insert `term`, or replace the existing row with the same id. The
+ *  server's add endpoint is idempotent on id, so a re-add returns an
+ *  existing Term — this keeps the list free of duplicates either way. */
+export const upsertTerm = (terms: Term[], term: Term): Term[] => {
+  const known = terms.some((t) => t.id === term.id);
+  return known
+    ? terms.map((t) => (t.id === term.id ? term : t))
+    : [...terms, term];
+};
+
+export const removeTerm = (terms: Term[], id: string): Term[] =>
+  terms.filter((t) => t.id !== id);
+
+export const isCompleteDraft = (draft: NewTerm): boolean =>
+  draft.foreign_lang.length > 0 &&
+  draft.foreign_text.length > 0 &&
+  draft.pivot_text.length > 0;
+
+const blankToUndefined = (value: string): Optional<string> => {
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+};
+
+export const describeError = (error: ApiError): string => {
   switch (error.kind) {
     case "network":
       return `Network error: ${error.detail}`;

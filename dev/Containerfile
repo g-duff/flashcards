@@ -24,9 +24,10 @@ RUN npm run build
 # in stage 3 (same Debian bookworm). Production cross-compiles a static
 # musl/ARMv6 binary instead; musl there is to dodge an ARMv6-specific
 # glibc dynamic-linker bug that does not exist off that hardware, so a
-# native glibc build is representative here. A C dependency builds fine
-# natively — the zig cc wrapper in server/Containerfile is only for the
-# ARM cross-build.
+# native glibc build is representative here. rusqlite's "bundled" feature
+# compiles the SQLite C amalgamation; the rust:1-bookworm image already
+# carries gcc, so that builds natively with no extra setup — only the
+# ARM cross-build in server/Containerfile needs a C cross-toolchain.
 FROM docker.io/library/rust:1-bookworm AS server
 WORKDIR /build
 COPY server/ ./
@@ -40,7 +41,7 @@ FROM docker.io/library/nginx:stable-bookworm
 ARG APP
 
 COPY dev/sandy-bank.conf /etc/nginx/conf.d/default.conf
-RUN mkdir -p /var/www/default "/var/www/sandy-bank/${APP}" && \
+RUN mkdir -p /var/www/default "/var/www/sandy-bank/${APP}" /data && \
     printf '<h1>sandy-bank</h1>\n' > /var/www/default/index.html
 
 # The REAL, unmodified routing fragment — the same file `deploy.sh -n`

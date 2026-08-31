@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST_DIR="$SCRIPT_DIR/dist"
-BIN_NAME="$(grep '^name' "$SCRIPT_DIR/Cargo.toml" | head -1 | sed -E 's/name *= *"(.*)"/\1/')"
+BIN_NAME="$(grep '^name' "$SCRIPT_DIR/Cargo.toml" | head -1 | sed -E 's/^name *= *"([^"]*)".*/\1/')"
 BIN_PATH="$DIST_DIR/$BIN_NAME"
 SERVICE_FILE="pi-flashcards-server.service"
 

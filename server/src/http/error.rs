@@ -11,8 +11,12 @@ use serde_json::json;
 pub enum AppError {
     #[error("{0}")]
     BadRequest(String),
-    #[error("card not found")]
+    #[error("term not found")]
     NotFound,
+    /// An infrastructure failure (the database, mainly). The cause is
+    /// logged where it is mapped; the client only ever sees this message.
+    #[error("internal error")]
+    Internal,
 }
 
 impl IntoResponse for AppError {
@@ -20,6 +24,7 @@ impl IntoResponse for AppError {
         let status = match &self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
+            AppError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, Json(json!({ "error": self.to_string() }))).into_response()
     }
