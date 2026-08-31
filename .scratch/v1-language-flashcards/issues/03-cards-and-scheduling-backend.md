@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (Terms + `Db` + id helpers), 02 (`Scheduler` trait + box-model impl).
 
-**Status:** implemented — pending review
+**Status:** resolved
 
 ## Progress (2026-08-31)
 
