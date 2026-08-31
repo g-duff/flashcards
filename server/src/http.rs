@@ -6,13 +6,20 @@
 pub mod error;
 pub mod handlers;
 
-use axum::routing::{get, patch};
+use std::sync::Arc;
 
+use axum::routing::{get, patch, post};
+
+use crate::core::Scheduler;
 use crate::store::Db;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: Db,
+    /// The scheduling strategy, resolved once in `main` (ADR-0001).
+    /// Handlers hold it as a trait object so swapping Leitner for another
+    /// impl is a one-line change there.
+    pub scheduler: Arc<dyn Scheduler + Send + Sync>,
 }
 
 /// Builds the application router. `main` owns constructing the state;
@@ -33,6 +40,8 @@ pub fn router(state: AppState) -> axum::Router {
             "/terms/:id",
             patch(handlers::patch_term).delete(handlers::delete_term),
         )
+        .route("/cards", get(handlers::list_cards))
+        .route("/cards/:id/reviews", post(handlers::create_review))
         .with_state(state)
 }
 
@@ -41,6 +50,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use chrono::Utc;
     use serde_json::{Value, json};
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -50,7 +60,11 @@ mod tests {
     fn app() -> (TempDir, axum::Router) {
         let dir = TempDir::new().expect("tempdir");
         let db = Db::open(&dir.path().join("flashcards.db")).expect("open db");
-        (dir, router(AppState { db }))
+        let state = AppState {
+            db,
+            scheduler: Arc::new(crate::core::Leitner),
+        };
+        (dir, router(state))
     }
 
     async fn send(app: &axum::Router, req: Request<Body>) -> (StatusCode, Value) {
@@ -226,5 +240,151 @@ mod tests {
 
         let (status, _) = send(&app, delete(&format!("/terms/{id}"))).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// Add the sample Term and return `(term_id, [PracticeCard, ...])`.
+    async fn seed_term(app: &axum::Router) -> (String, Vec<Value>) {
+        let (_, created) = send(app, post("/terms", new_term_body())).await;
+        let term_id = created["id"].as_str().expect("id").to_string();
+        let (status, cards) = send(app, get("/cards")).await;
+        assert_eq!(status, StatusCode::OK);
+        let cards = cards.as_array().expect("array").clone();
+        (term_id, cards)
+    }
+
+    #[tokio::test]
+    async fn creating_a_term_yields_two_practice_cards() {
+        let (_dir, app) = app();
+        let (term_id, cards) = seed_term(&app).await;
+
+        assert_eq!(cards.len(), 2);
+        let foreign = cards
+            .iter()
+            .find(|c| c["prompt_side"] == "foreign")
+            .expect("foreign card");
+        let pivot = cards
+            .iter()
+            .find(|c| c["prompt_side"] == "pivot")
+            .expect("pivot card");
+
+        assert_eq!(foreign["prompt"], "perro");
+        assert_eq!(foreign["answer"], "dog");
+        assert_eq!(foreign["term_id"], term_id);
+        assert_eq!(foreign["box"], 1);
+        assert_eq!(pivot["prompt"], "dog");
+        assert_eq!(pivot["answer"], "perro");
+        assert_eq!(pivot["notes"], "el perro (m)");
+    }
+
+    #[tokio::test]
+    async fn due_before_filters_the_card_list() {
+        let (_dir, app) = app();
+        let (_, cards) = seed_term(&app).await;
+        let first = cards[0]["id"].as_str().expect("id").to_string();
+
+        // Pass one Card: its due date jumps ~2 days out.
+        let (status, _) = send(
+            &app,
+            post(
+                &format!("/cards/{first}/reviews"),
+                json!({ "rating": "pass" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        // A cut-off one day out drops the passed Card, keeps its sibling.
+        // `Z` form so the `+` of a numeric offset needn't be URL-encoded.
+        let cutoff = (Utc::now() + chrono::Duration::days(1))
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let (status, due) = send(&app, get(&format!("/cards?due_before={cutoff}&limit=10"))).await;
+        assert_eq!(status, StatusCode::OK);
+        let due = due.as_array().expect("array");
+        assert_eq!(due.len(), 1);
+        assert_ne!(due[0]["id"], first);
+    }
+
+    #[tokio::test]
+    async fn a_pass_then_a_fail_move_the_box_and_due_date() {
+        let (_dir, app) = app();
+        let (_, cards) = seed_term(&app).await;
+        let id = cards[0]["id"].as_str().expect("id").to_string();
+        let due_before = cards[0]["due_at"].as_str().expect("due_at").to_string();
+
+        let (status, passed) = send(
+            &app,
+            post(&format!("/cards/{id}/reviews"), json!({ "rating": "pass" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(passed["box"], 2);
+        assert!(
+            passed["due_at"].as_str().unwrap() > due_before.as_str(),
+            "a pass pushes due_at out",
+        );
+
+        let (status, failed) = send(
+            &app,
+            post(&format!("/cards/{id}/reviews"), json!({ "rating": "fail" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(failed["box"], 1, "a fail resets to box 1");
+    }
+
+    #[tokio::test]
+    async fn a_review_on_an_unknown_card_is_404() {
+        let (_dir, app) = app();
+        let (status, body) = send(
+            &app,
+            post("/cards/no-such-card/reviews", json!({ "rating": "pass" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "card not found");
+    }
+
+    #[tokio::test]
+    async fn a_bad_rating_is_400() {
+        let (_dir, app) = app();
+        let (_, cards) = seed_term(&app).await;
+        let id = cards[0]["id"].as_str().expect("id").to_string();
+
+        let (status, body) = send(
+            &app,
+            post(
+                &format!("/cards/{id}/reviews"),
+                json!({ "rating": "maybe" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn an_unparseable_due_before_is_400() {
+        let (_dir, app) = app();
+        let (status, body) = send(&app, get("/cards?due_before=not-a-date")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body["error"]
+                .as_str()
+                .expect("error string")
+                .contains("due_before")
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_a_term_removes_its_cards() {
+        let (_dir, app) = app();
+        let (term_id, _) = seed_term(&app).await;
+
+        let (status, _) = send(&app, delete(&format!("/terms/{term_id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, cards) = send(&app, get("/cards")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(cards.as_array().expect("array").is_empty());
     }
 }

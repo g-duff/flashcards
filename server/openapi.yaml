@@ -14,6 +14,13 @@ info:
     derived from them, so re-posting the same Term returns the existing
     row rather than creating a duplicate. Only `notes` is editable.
 
+    Creating a Term also creates its two Cards — one prompting with the
+    foreign text (`prompt_side: foreign`, recognition), one with the pivot
+    text (`prompt_side: pivot`, production) — each on a Leitner schedule.
+    `GET /cards` lists them; `POST /cards/{id}/reviews` grades an attempt
+    and reschedules the Card, appending to an append-only review log.
+    Deleting a Term removes its Cards and their reviews.
+
     Response-body convention:
       - endpoints about one Term return a `Term`
       - endpoints about many Terms return a bare `[Term, ...]`
@@ -129,6 +136,7 @@ paths:
     delete:
       operationId: deleteTerm
       summary: Delete a Term
+      description: Cascades — the Term's two Cards and all their reviews go with it.
       parameters:
         - name: id
           in: path
@@ -145,6 +153,88 @@ paths:
                 $ref: "#/components/schemas/Deleted"
         "404":
           description: No Term with that id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /cards:
+    get:
+      operationId: listCards
+      summary: List practice Cards
+      description: |
+        Every Card by default. `due_before` (ISO-8601) keeps only Cards
+        due at or before that instant; `limit` caps the count. The
+        practice screen calls it with `due_before=<now>&limit=20` to pull
+        its queue. Results are ordered by `due_at`, oldest first.
+      parameters:
+        - name: due_before
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Keep only Cards with `due_at <= due_before`
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+          description: Cap on the number of Cards returned
+      responses:
+        "200":
+          description: The matching Cards, oldest-due first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PracticeCard"
+        "400":
+          description: "`due_before` is not a valid ISO-8601 timestamp"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /cards/{id}/reviews:
+    post:
+      operationId: createReview
+      summary: Grade one attempt at a Card
+      description: |
+        In one transaction: append a `review` row, run the `Scheduler` to
+        get the Card's next `schedule_state` and `due_at`, write them
+        back, and return the updated Card. A `pass` promotes the Card a
+        Leitner box and pushes `due_at` out; a `fail` resets it to box 1.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewReview"
+      responses:
+        "200":
+          description: The Card after rescheduling
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PracticeCard"
+        "400":
+          description: Malformed body or a `rating` outside `pass`/`fail`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No Card with that id
           content:
             application/json:
               schema:
@@ -215,6 +305,53 @@ components:
           type: string
           format: uuid
           description: The id of the Term that was removed
+    PracticeCard:
+      type: object
+      description: A Card with its Term's text resolved for display during practice.
+      required:
+        [id, term_id, prompt_side, prompt, answer, notes, due_at, box]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Deterministic UUIDv5 over `term_id ␟ prompt_side`
+        term_id:
+          type: string
+          format: uuid
+        prompt_side:
+          type: string
+          enum: [foreign, pivot]
+          description: |
+            `foreign` shows the foreign text and asks for the pivot text
+            (recognition); `pivot` is the reverse (production).
+        prompt:
+          type: string
+          description: The text shown — `foreign_text` or `pivot_text` per `prompt_side`
+          example: gato
+        answer:
+          type: string
+          description: The text to recall — the other side
+          example: cat
+        notes:
+          type: string
+          nullable: true
+          description: The parent Term's notes
+        due_at:
+          type: string
+          format: date-time
+          description: When the Card next falls due
+        box:
+          type: integer
+          minimum: 1
+          description: Current Leitner box, read from the Card's schedule state
+          example: 1
+    NewReview:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: string
+          enum: [pass, fail]
     Error:
       type: object
       required: [error]
