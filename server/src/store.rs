@@ -15,7 +15,16 @@ use rusqlite::{Connection, OptionalExtension, params};
 use rusqlite_migration::{HookResult, M, Migrations};
 
 use crate::core::{self, CardSeed, Leitner, Schedule};
-use crate::model::{NewTerm, PracticeCard, PromptSide, Term};
+use crate::model::{ImportReport, NewTerm, PracticeCard, PromptSide, Term};
+
+/// One element of a [`Db::import_terms`] batch: a Term whose id and Card
+/// seeds the shell has already derived (in `http::handlers`), ready to
+/// insert. Kept separate from [`NewTerm`] so the store never re-hashes.
+pub struct TermImport {
+    pub id: String,
+    pub new: NewTerm,
+    pub cards: Vec<CardSeed>,
+}
 
 /// Embedded schema history. v1 creates the `term` table; v2 adds the
 /// `card` and `review` tables and, via its up-hook, back-fills the two
@@ -123,24 +132,45 @@ impl Db {
     ) -> rusqlite::Result<Term> {
         self.with(move |conn| {
             let tx = conn.transaction()?;
-            tx.execute(
-                "INSERT INTO term (id, foreign_lang, foreign_text, pivot_text, notes, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO NOTHING",
-                params![
-                    id,
-                    new.foreign_lang,
-                    new.foreign_text,
-                    new.pivot_text,
-                    new.notes,
-                    created_at,
-                ],
-            )?;
+            insert_term_row(&tx, &id, &new, &created_at)?;
             for card in &cards {
                 insert_card_row(&tx, &id, card, &created_at)?;
             }
             let term = fetch_term(&tx, &id)?;
             tx.commit()?;
             Ok(term)
+        })
+        .await
+    }
+
+    /// Insert a batch of already-validated Terms, each with its two Cards,
+    /// in a single transaction. Dedup is by the deterministic id:
+    /// `INSERT ... ON CONFLICT(id) DO NOTHING`, so re-importing an
+    /// overlapping file skips the Terms already present. The returned
+    /// [`ImportReport`] counts the rows written (`imported`) and the
+    /// id conflicts (`skipped`); the two always sum to `items.len()`.
+    pub async fn import_terms(
+        &self,
+        items: Vec<TermImport>,
+        created_at: String,
+    ) -> rusqlite::Result<ImportReport> {
+        self.with(move |conn| {
+            let tx = conn.transaction()?;
+            let imported = items.iter().try_fold(0usize, |count, item| {
+                if !insert_term_row(&tx, &item.id, &item.new, &created_at)? {
+                    // Id already present — its Cards are too. Skip.
+                    return Ok::<usize, rusqlite::Error>(count);
+                }
+                for card in &item.cards {
+                    insert_card_row(&tx, &item.id, card, &created_at)?;
+                }
+                Ok(count + 1)
+            })?;
+            tx.commit()?;
+            Ok(ImportReport {
+                imported,
+                skipped: items.len() - imported,
+            })
         })
         .await
     }
@@ -253,6 +283,31 @@ impl Db {
         })
         .await
     }
+}
+
+/// Insert one Term row, skipping it if its (deterministic) id is already
+/// present. Returns whether a row was actually written — `false` means the
+/// id was a conflict. Shared by [`Db::insert_term`] and
+/// [`Db::import_terms`], so the column list lives in one place.
+fn insert_term_row(
+    conn: &Connection,
+    id: &str,
+    new: &NewTerm,
+    created_at: &str,
+) -> rusqlite::Result<bool> {
+    let written = conn.execute(
+        "INSERT INTO term (id, foreign_lang, foreign_text, pivot_text, notes, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO NOTHING",
+        params![
+            id,
+            new.foreign_lang,
+            new.foreign_text,
+            new.pivot_text,
+            new.notes,
+            created_at,
+        ],
+    )?;
+    Ok(written > 0)
 }
 
 /// Insert one Card row, skipping it if its (deterministic) id is already
@@ -440,6 +495,92 @@ mod tests {
         assert_eq!(first, second, "the originally stored row wins");
         assert_eq!(db.list_terms().await.expect("list").len(), 1);
         assert_eq!(db.due_cards(None, None).await.expect("cards").len(), 2);
+    }
+
+    /// A `TermImport` for `(foreign_text, pivot_text)`, id derived the
+    /// same way the shell does, with its two Card seeds.
+    fn an_import(foreign_text: &str, pivot_text: &str) -> TermImport {
+        let new = NewTerm {
+            foreign_lang: "es".to_string(),
+            foreign_text: foreign_text.to_string(),
+            pivot_text: pivot_text.to_string(),
+            notes: None,
+        };
+        let id = core::term_id(&new).to_string();
+        let cards = core::card_seeds(&id, &Leitner, now()).to_vec();
+        TermImport { id, new, cards }
+    }
+
+    #[tokio::test]
+    async fn import_terms_inserts_every_term_with_its_two_cards() {
+        let (_dir, db) = temp_db();
+
+        let report = db
+            .import_terms(
+                vec![an_import("perro", "dog"), an_import("gato", "cat")],
+                now().to_rfc3339(),
+            )
+            .await
+            .expect("import");
+
+        assert_eq!(
+            report,
+            ImportReport {
+                imported: 2,
+                skipped: 0,
+            },
+        );
+        assert_eq!(db.list_terms().await.expect("list").len(), 2);
+        assert_eq!(db.due_cards(None, None).await.expect("cards").len(), 4);
+    }
+
+    #[tokio::test]
+    async fn import_terms_skips_ids_already_present_on_re_import() {
+        let (_dir, db) = temp_db();
+        let batch = || vec![an_import("perro", "dog"), an_import("gato", "cat")];
+
+        db.import_terms(batch(), now().to_rfc3339())
+            .await
+            .expect("first import");
+        // Re-import the same file plus one new Term.
+        let mut second = batch();
+        second.push(an_import("pato", "duck"));
+        let report = db
+            .import_terms(second, now().to_rfc3339())
+            .await
+            .expect("second import");
+
+        assert_eq!(
+            report,
+            ImportReport {
+                imported: 1,
+                skipped: 2,
+            },
+        );
+        assert_eq!(db.list_terms().await.expect("list").len(), 3);
+        assert_eq!(db.due_cards(None, None).await.expect("cards").len(), 6);
+    }
+
+    #[tokio::test]
+    async fn import_terms_dedupes_within_a_single_batch() {
+        let (_dir, db) = temp_db();
+
+        let report = db
+            .import_terms(
+                vec![an_import("perro", "dog"), an_import("perro", "dog")],
+                now().to_rfc3339(),
+            )
+            .await
+            .expect("import");
+
+        assert_eq!(
+            report,
+            ImportReport {
+                imported: 1,
+                skipped: 1,
+            },
+        );
+        assert_eq!(db.list_terms().await.expect("list").len(), 1);
     }
 
     #[tokio::test]

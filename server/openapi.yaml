@@ -96,6 +96,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /terms/import:
+    post:
+      operationId: importTerms
+      summary: Bulk-add Terms
+      description: |
+        Add a batch of Terms from a JSON array of `NewTerm`. The learner's
+        browser parses the delimited file and sends JSON — the server does
+        no file or delimiter handling.
+
+        All-or-nothing on parse/validate: every element is validated by
+        the same rules as `POST /terms`, and a single bad element returns
+        `400` naming its array index with nothing imported.
+
+        Valid elements are inserted through the same path as `POST /terms`,
+        so each new Term also gets its two Cards. Dedup is by the
+        deterministic Term id (`INSERT ... ON CONFLICT(id) DO NOTHING`), so
+        re-importing a file that overlaps an earlier one silently skips the
+        Terms already present. `skipped` in the response counts those
+        conflicts; `imported + skipped` equals the array length.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/NewTerm"
+      responses:
+        "200":
+          description: How many Terms were newly imported and how many skipped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportReport"
+        "400":
+          description: Malformed body, or an element failed validation (message names its index)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /terms/{id}:
     patch:
       operationId: patchTermNotes
@@ -305,6 +346,21 @@ components:
           type: string
           format: uuid
           description: The id of the Term that was removed
+    ImportReport:
+      type: object
+      description: The outcome of a POST /terms/import — the two counts sum to the array length.
+      required: [imported, skipped]
+      properties:
+        imported:
+          type: integer
+          minimum: 0
+          description: Terms newly written (each also got its two Cards)
+          example: 15
+        skipped:
+          type: integer
+          minimum: 0
+          description: Elements whose Term id already existed and were left untouched
+          example: 0
     PracticeCard:
       type: object
       description: A Card with its Term's text resolved for display during practice.

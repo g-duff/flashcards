@@ -39,6 +39,16 @@ const UNIT_SEP: &str = "\u{1f}";
 #[error("{0} must not be empty")]
 pub struct EmptyField(pub &'static str);
 
+/// Why an import batch was rejected: element `index` failed the same
+/// validation as `POST /terms`. Carries the index so the shell's `400`
+/// body names the offending element and imports nothing (all-or-nothing).
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("element {index}: {source}")]
+pub struct ImportElementError {
+    pub index: usize,
+    pub source: EmptyField,
+}
+
 /// The canonical string a Term's id hashes over: the three identity
 /// fields, each NFC-normalised and outer-trimmed, joined by the unit
 /// separator. Case is preserved (`él` and `el` are different words) and
@@ -122,6 +132,15 @@ pub fn validate_new_term(term: &NewTerm) -> Result<(), EmptyField> {
         Some((name, _)) => Err(EmptyField(name)),
         None => Ok(()),
     }
+}
+
+/// Validate every element of an import batch in order, each by the same
+/// rules as `POST /terms`. `Err` on the first invalid element, naming its
+/// index — the shell then imports nothing (all-or-nothing parse/validate).
+pub fn validate_import(terms: &[NewTerm]) -> Result<(), ImportElementError> {
+    terms.iter().enumerate().try_for_each(|(index, term)| {
+        validate_new_term(term).map_err(|source| ImportElementError { index, source })
+    })
 }
 
 #[cfg(test)]
@@ -283,5 +302,41 @@ mod tests {
             ..term("es", "perro", "dog")
         };
         assert_eq!(validate_new_term(&blank_notes), Ok(()));
+    }
+
+    #[test]
+    fn validate_import_accepts_a_batch_of_good_terms() {
+        let batch = [term("es", "perro", "dog"), term("es", "gato", "cat")];
+        assert_eq!(validate_import(&batch), Ok(()));
+    }
+
+    #[test]
+    fn validate_import_accepts_an_empty_batch() {
+        assert_eq!(validate_import(&[]), Ok(()));
+    }
+
+    #[test]
+    fn validate_import_reports_the_first_bad_element_by_index() {
+        let batch = [
+            term("es", "perro", "dog"),
+            term("es", "", "cat"),
+            term("es", "pato", ""),
+        ];
+        assert_eq!(
+            validate_import(&batch),
+            Err(ImportElementError {
+                index: 1,
+                source: EmptyField("foreign_text"),
+            }),
+        );
+    }
+
+    #[test]
+    fn import_element_error_message_names_the_index_and_field() {
+        let err = ImportElementError {
+            index: 3,
+            source: EmptyField("pivot_text"),
+        };
+        assert_eq!(err.to_string(), "element 3: pivot_text must not be empty");
     }
 }

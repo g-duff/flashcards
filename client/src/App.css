@@ -43,6 +43,69 @@ h1 {
   margin: 0;
 }
 
+.import {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+}
+
+.import h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.import-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.import-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.import-controls .delimiter {
+  width: 3rem;
+  padding: 0.375rem;
+  font: inherit;
+  text-align: center;
+  border: 1px solid #ccc;
+  border-radius: 0.375rem;
+}
+
+.import-controls button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  border: 0;
+  border-radius: 0.375rem;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+.import-controls button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.import-preview {
+  margin-top: 0.75rem;
+}
+
+.import-errors {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.import-result {
+  margin: 0.75rem 0 0;
+  font-weight: 600;
+}
+
 .terms {
   width: 100%;
   border-collapse: collapse;

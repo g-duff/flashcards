@@ -6,6 +6,7 @@ import type { PracticeCard } from "./api/cards";
 import type { NewTerm, Term } from "./api/terms";
 import { createTerm, deleteTerm, listTerms, patchTermNotes } from "./api/terms";
 import { describeError } from "./errors";
+import { ImportControl } from "./ImportControl";
 import { Practice } from "./Practice";
 import type { Optional, Result } from "./types/effects";
 import "./App.css";
@@ -31,6 +32,10 @@ export const App = () => {
     void listDueCards(new Date().toISOString()).then((result) =>
       setDue(toDueState(result)),
     );
+  }, []);
+
+  const refreshVocab = useCallback(() => {
+    void listTerms().then((result) => setVocab(toVocabState(result)));
   }, []);
 
   useEffect(() => {
@@ -69,6 +74,12 @@ export const App = () => {
           </div>
           <NewTermForm
             onAdded={(term) => withTerms((terms) => upsertTerm(terms, term))}
+          />
+          <ImportControl
+            onImported={() => {
+              refreshVocab();
+              refreshDue();
+            }}
           />
           <Vocab
             state={vocab}

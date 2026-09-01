@@ -42,6 +42,16 @@ pub struct Deleted {
     pub deleted: String,
 }
 
+/// The body of a successful `POST /terms/import` (the `ImportReport`
+/// schema in `openapi.yaml`). `imported` counts the Terms newly written;
+/// `skipped` counts the elements whose deterministic id already existed
+/// (`INSERT ... ON CONFLICT(id) DO NOTHING`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct ImportReport {
+    pub imported: usize,
+    pub skipped: usize,
+}
+
 /// Which of a Term's two texts a Card prompts with. `foreign` shows the
 /// foreign text and asks for the pivot text (recognition); `pivot` is the
 /// reverse (production). Serialises as its lowercase name, matching the
