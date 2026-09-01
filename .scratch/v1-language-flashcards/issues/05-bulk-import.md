@@ -6,17 +6,17 @@ The server only ever receives JSON — all file and delimiter handling is in the
 
 **Blocked by:** 03 (the Term→two-Cards insert path the import shares).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 ## Acceptance criteria
 
-- [ ] `POST /terms/import` accepts a JSON array of `NewTerm`. Each element is validated (same rules as `POST /terms`); one bad element → `400 {error}` naming the element index, nothing imported (all-or-nothing parse/validate).
-- [ ] Valid elements are inserted via ticket 03's shared path, so each new Term also gets its two Cards. Dedup is `INSERT ... ON CONFLICT(id) DO NOTHING`; response is `{imported: N, skipped: M}` where `skipped` counts the conflicts.
-- [ ] `openapi.yaml` updated with `/terms/import` and its request/response schemas.
-- [ ] Import control on the Vocab screen: file picker + a delimiter text field defaulting to `,`. On file select, the browser parses to `[NewTerm]` (columns per `dev/sample-vocab.csv`), shows a parsed-row count, and lists any unparseable lines with their line numbers. A disabled "Import" button until there is at least one valid row and no parse errors.
-- [ ] After import: show `imported` / `skipped` from the response and refresh the Term table.
-- [ ] `dev/sample-vocab.csv` added — ~15 Spanish Terms (`foreign_lang,foreign_text,pivot_text,notes` with the default `,` delimiter), usable as-is for first-run setup and as a test fixture.
-- [ ] Backend tests: happy path, dedup on re-import, `400` on a bad element with nothing persisted. Frontend tests: parse with the default delimiter, parse with a custom delimiter, a malformed line reported by number, the disabled-button rule.
+- [x] `POST /terms/import` accepts a JSON array of `NewTerm`. Each element is validated (same rules as `POST /terms`); one bad element → `400 {error}` naming the element index, nothing imported (all-or-nothing parse/validate).
+- [x] Valid elements are inserted via ticket 03's shared path, so each new Term also gets its two Cards. Dedup is `INSERT ... ON CONFLICT(id) DO NOTHING`; response is `{imported: N, skipped: M}` where `skipped` counts the conflicts.
+- [x] `openapi.yaml` updated with `/terms/import` and its request/response schemas.
+- [x] Import control on the Vocab screen: file picker + a delimiter text field defaulting to `,`. On file select, the browser parses to `[NewTerm]` (columns per `dev/sample-vocab.csv`), shows a parsed-row count, and lists any unparseable lines with their line numbers. A disabled "Import" button until there is at least one valid row and no parse errors.
+- [x] After import: show `imported` / `skipped` from the response and refresh the Term table.
+- [x] `dev/sample-vocab.csv` added — ~15 Spanish Terms (`foreign_lang,foreign_text,pivot_text,notes` with the default `,` delimiter), usable as-is for first-run setup and as a test fixture.
+- [x] Backend tests: happy path, dedup on re-import, `400` on a bad element with nothing persisted. Frontend tests: parse with the default delimiter, parse with a custom delimiter, a malformed line reported by number, the disabled-button rule.
 
 ## How to test it yourself
 
