@@ -8,7 +8,8 @@ use uuid::Uuid;
 use crate::core;
 use crate::http::AppState;
 use crate::http::error::AppError;
-use crate::model::{Deleted, NewReview, NewTerm, NotesPatch, PracticeCard, Term};
+use crate::model::{Deleted, ImportReport, NewReview, NewTerm, NotesPatch, PracticeCard, Term};
+use crate::store::TermImport;
 
 pub async fn healthz() -> &'static str {
     "ok"
@@ -40,9 +41,8 @@ pub async fn create_term(
     let Json(req) = body.map_err(|rej| AppError::BadRequest(rej.body_text()))?;
     core::validate_new_term(&req).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    let id = core::term_id(&req).to_string();
     let now = Utc::now();
-    let cards = core::card_seeds(&id, state.scheduler.as_ref(), now).to_vec();
+    let (id, cards) = seed_cards(&req, &state, now);
     let term = state
         .db
         .insert_term(id, req, now.to_rfc3339(), cards)
@@ -53,6 +53,55 @@ pub async fn create_term(
     // returned as-is (idempotent id), and no new row is written.
     tracing::info!(term_id = %term.id, "term stored");
     Ok(Json(term))
+}
+
+/// Bulk-add Terms from a JSON array of `NewTerm`. The whole batch is
+/// validated first (same rules as [`create_term`]); one bad element →
+/// `400` naming its index, nothing written. Valid elements go in via the
+/// shared insert path — each new Term gets its two Cards — with dedup by
+/// deterministic id (`ON CONFLICT(id) DO NOTHING`). The response is
+/// `{ imported, skipped }`, `skipped` being the id conflicts.
+pub async fn import_terms(
+    State(state): State<AppState>,
+    body: Result<Json<Vec<NewTerm>>, JsonRejection>,
+) -> Result<Json<ImportReport>, AppError> {
+    let Json(terms) = body.map_err(|rej| AppError::BadRequest(rej.body_text()))?;
+    core::validate_import(&terms).map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let now = Utc::now();
+    let items = terms
+        .into_iter()
+        .map(|new| {
+            let (id, cards) = seed_cards(&new, &state, now);
+            TermImport { id, new, cards }
+        })
+        .collect();
+
+    let report = state
+        .db
+        .import_terms(items, now.to_rfc3339())
+        .await
+        .map_err(internal)?;
+
+    tracing::info!(
+        imported = report.imported,
+        skipped = report.skipped,
+        "terms imported"
+    );
+    Ok(Json(report))
+}
+
+/// Derive a Term's deterministic id and the seeds for its two Cards — the
+/// pair [`create_term`] and [`import_terms`] both need before an insert,
+/// built the one way (from the request-path [`core::Scheduler`] seam).
+fn seed_cards(
+    new: &NewTerm,
+    state: &AppState,
+    now: DateTime<Utc>,
+) -> (String, Vec<core::CardSeed>) {
+    let id = core::term_id(new).to_string();
+    let cards = core::card_seeds(&id, state.scheduler.as_ref(), now).to_vec();
+    (id, cards)
 }
 
 /// Edit a Term's `notes` — its only mutable field.

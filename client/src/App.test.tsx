@@ -11,6 +11,7 @@ vi.mock("./api/terms", () => ({
   createTerm: vi.fn(),
   patchTermNotes: vi.fn(),
   deleteTerm: vi.fn(),
+  importTerms: vi.fn(),
 }));
 
 vi.mock("./api/cards", () => ({
@@ -179,6 +180,34 @@ describe("Vocab screen", () => {
       expect(screen.getByText("No terms yet. Add one above.")).toBeInTheDocument(),
     );
     confirm.mockRestore();
+  });
+
+  it("imports a file and refreshes the term table from the server", async () => {
+    vi.mocked(api.listTerms)
+      .mockResolvedValueOnce(ok([]))
+      .mockResolvedValue(ok([term({ foreign_text: "perro" })]));
+    vi.mocked(api.importTerms).mockResolvedValue(ok({ imported: 1, skipped: 0 }));
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByText("No terms yet. Add one above.");
+
+    await user.upload(
+      screen.getByLabelText("vocab file"),
+      new File(["es,perro,dog,el perro (m)"], "vocab.csv", { type: "text/csv" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Import" }));
+
+    expect(api.importTerms).toHaveBeenCalledWith([
+      {
+        foreign_lang: "es",
+        foreign_text: "perro",
+        pivot_text: "dog",
+        notes: "el perro (m)",
+      },
+    ]);
+    expect(await screen.findByText("Imported 1, skipped 0.")).toBeInTheDocument();
+    expect(await screen.findByText("perro")).toBeInTheDocument();
   });
 });
 

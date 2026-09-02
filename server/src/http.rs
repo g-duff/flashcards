@@ -36,6 +36,7 @@ pub fn router(state: AppState) -> axum::Router {
             "/terms",
             get(handlers::list_terms).post(handlers::create_term),
         )
+        .route("/terms/import", post(handlers::import_terms))
         .route(
             "/terms/:id",
             patch(handlers::patch_term).delete(handlers::delete_term),
@@ -192,6 +193,79 @@ mod tests {
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body["error"].is_string());
+    }
+
+    #[tokio::test]
+    async fn import_adds_every_term_and_its_two_cards() {
+        let (_dir, app) = app();
+
+        let (status, report) = send(
+            &app,
+            post(
+                "/terms/import",
+                json!([
+                    { "foreign_lang": "es", "foreign_text": "perro", "pivot_text": "dog" },
+                    { "foreign_lang": "es", "foreign_text": "gato", "pivot_text": "cat",
+                      "notes": "el gato" },
+                ]),
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(report, json!({ "imported": 2, "skipped": 0 }));
+
+        let (_, list) = send(&app, get("/terms")).await;
+        assert_eq!(list.as_array().expect("array").len(), 2);
+        let (_, cards) = send(&app, get("/cards")).await;
+        assert_eq!(cards.as_array().expect("array").len(), 4);
+    }
+
+    #[tokio::test]
+    async fn re_importing_an_overlapping_file_skips_the_terms_already_present() {
+        let (_dir, app) = app();
+        let batch = json!([
+            { "foreign_lang": "es", "foreign_text": "perro", "pivot_text": "dog" },
+            { "foreign_lang": "es", "foreign_text": "gato", "pivot_text": "cat" },
+        ]);
+
+        let (_, first) = send(&app, post("/terms/import", batch.clone())).await;
+        assert_eq!(first, json!({ "imported": 2, "skipped": 0 }));
+
+        let (status, second) = send(&app, post("/terms/import", batch)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(second, json!({ "imported": 0, "skipped": 2 }));
+
+        let (_, list) = send(&app, get("/terms")).await;
+        assert_eq!(list.as_array().expect("array").len(), 2, "no duplicates");
+    }
+
+    #[tokio::test]
+    async fn import_with_one_bad_element_is_a_400_naming_the_index_and_persists_nothing() {
+        let (_dir, app) = app();
+
+        let (status, body) = send(
+            &app,
+            post(
+                "/terms/import",
+                json!([
+                    { "foreign_lang": "es", "foreign_text": "perro", "pivot_text": "dog" },
+                    { "foreign_lang": "es", "foreign_text": "", "pivot_text": "x" },
+                ]),
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let message = body["error"].as_str().expect("error string");
+        assert!(message.contains('1'), "names the element index: {message}");
+        assert!(message.contains("foreign_text"), "names the field: {message}");
+
+        // All-or-nothing: the valid element 0 was not written either.
+        let (_, list) = send(&app, get("/terms")).await;
+        assert!(list.as_array().expect("array").is_empty());
+        let (_, cards) = send(&app, get("/cards")).await;
+        assert!(cards.as_array().expect("array").is_empty());
     }
 
     #[tokio::test]

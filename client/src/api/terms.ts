@@ -26,6 +26,18 @@ export const listTerms = (): Promise<Result<Term[], ApiError>> =>
 export const createTerm = (term: NewTerm): Promise<Result<Term, ApiError>> =>
   apiPost<Term>("/terms", term);
 
+/** The outcome of a bulk import: how many Terms were newly written and
+ *  how many were skipped because their id already existed. The two sum to
+ *  the number of Terms sent. */
+export type ImportReport = { imported: number; skipped: number };
+
+/** Bulk-add Terms. The file is parsed to `NewTerm[]` in the browser (see
+ *  `parseVocab`); the server only ever receives JSON. */
+export const importTerms = (
+  terms: NewTerm[],
+): Promise<Result<ImportReport, ApiError>> =>
+  apiPost<ImportReport>("/terms/import", terms);
+
 export const patchTermNotes = (
   id: string,
   notes: Optional<string>,
